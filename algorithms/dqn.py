@@ -117,6 +117,7 @@ class DQN():
   def bias_variable(self,shape):
     initial = tf.constant(0.01, shape = shape)
     return tf.Variable(initial)
+    
 # ---------------------------------------------------------
 # Hyper Parameters
 ENV_NAME = 'CartPole-v0'

@@ -101,4 +101,4 @@ class simulator(object):
 #TODO: adding the trace file 
 if __name__ == "__main__":
     sim = simulator()
-    sim.run()
+    #sim.run()
