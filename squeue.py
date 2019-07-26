@@ -1,3 +1,5 @@
+#The sending queue class and Flow class  
+
 import numpy as np
 import pandas as pd
 
@@ -17,7 +19,6 @@ class Flow(object):
         print the infomation of this flow
         '''
         print ('rtime:%d, src:%d, dst:%d, source port:%d, destination port:%d, size:%d, tag: %d')%(self.rtime,      self.src, self.dst, self.sp, self.dp, self.size, self.tag)
-
 
 class Squeue(object):
     def __init__(self, flow, starttime):
@@ -52,6 +53,7 @@ class Squeue(object):
         if the flow is completed return the inde0
         '''
         res = {}
+        #active flow
         if self.status :
             res['src'] = self.flow['src']
             res['dst'] = self.flow['dst']
@@ -60,6 +62,7 @@ class Squeue(object):
             res['dp'] = self.flow['dp']
             res['priority'] = self.priority
             return res
+        #completed flow
         else:
             res['src'] = self.flow['src']
             res['dst'] = self.flow['dst']
