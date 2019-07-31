@@ -23,11 +23,12 @@ class Flow(object):
 class Squeue(object):
     def __init__(self, flow, starttime):
         self.flow = flow    #infomation of this flow
-        self.residualsize = flow['size']    #residual size of this flow
+        self.residualsize = flow.size    #residual size of this flow
         self.priority = 1   #the sending priority
         self.status = 0     #sending status, 0 for uncompleted and 1 for completed
         self.starttime = starttime  #the start time 
         self.duration = -1          #the duration of transmission
+        self.bw = 0                 #the current bandwidth
 
 
     def update(self, bandwidth, interval, temp):
@@ -38,6 +39,7 @@ class Squeue(object):
         '''
         sentsize = bandwidth * (interval / 1000)
         self.residualsize = self.residualsize - sentsize
+        self.bw = bandwidth
         if self.residualsize <= 0:
             self.status = 1
             self.duration = temp - self.starttime
