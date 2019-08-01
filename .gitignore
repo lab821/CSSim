@@ -3,4 +3,4 @@ test.py
 __pycache__
 generator.py
 data.csv
-log
+log/log
