@@ -5,9 +5,9 @@ import pandas as pd
 import time
 import os
 from squeue import Flow, Squeue
-from scheduler import scheduler
+from scheduler import DQNscheduler
 
-#TODO: adding the trace file 
+
 class simulator(object):
     def __init__(self, trace, mode):
         self.data = pd.read_csv(trace)  #Flow trace 
@@ -19,7 +19,9 @@ class simulator(object):
         self.bandwidth = 100000000  #simulation bandwidth, unit:b/s
         self.hpc = 0                #counter of high priority flow 
         self.counter = 1            #counter of the total queue in the simulator
-        self.mode = mode          #simulator mode(once or cyclic)
+        self.mode = mode            #simulator mode(once or cyclic)
+        self.latestcpti = 0         #record the latest completed flow index in a training period
+        self.scheduler = DQNscheduler() #The DQN scheduler
 
     def prepare(self, temp):
         '''
@@ -75,20 +77,32 @@ class simulator(object):
                     self.completedqueues.append(queue)
                     self.sendingqueues.pop(i)
                     self.hpc -= 1
-
+            else:
+                queue.bw = 0
+                
     def Getinfo(self):
         '''
         Get the current active queues and completion queues information
         Two tables are returned, representing the active queues and the completed queues, respectively
         ret unit : dataframe  
         '''
-        actq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'priority'])
+        actq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'priority', 'sentsize', 'qindex'])
         cptq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'duration', 'size'])
         for queue in self.sendingqueues:
-            row = queue.Getinfo()
+            row = queue.getinfo()
             actq = actq.append(row, ignore_index=True)
+        ##NOTE:This change is followed by the change of removal of printed queues
+        # for i in range(len(self.completedqueues)-1, -1, -1):
+        #     queue = self.completedqueues[i]
+        #     if queue.index == self.latestcpti:
+        #         break
+        #     row = queue.getinfo()
+        #     cptq = cptq.append(row, ignore_index=True)
+        # if len(self.completedqueues) > 0:
+        #     self.latestcpti = self.completedqueues[-1].index
+        ##NOTE:Ibid
         for queue in self.completedqueues:
-            row = queue.Getinfo()
+            row = queue.getinfo()
             cptq = cptq.append(row, ignore_index=True)
         return actq, cptq
     
@@ -102,9 +116,9 @@ class simulator(object):
         for i in res.keys():
             change = res[i] - self.sendingqueues[i].priority
             self.sendingqueues[i].priority = res[i]
-            hpc = hpc + change  #change the high priority flow counter
+            self.hpc = self.hpc + change  #change the high priority flow counter
 
-    def Loginfo(self,temp):
+    def Loginfo(self,temp, info = ''):
         '''
         Print info in console and save in log file
         Input parameter：
@@ -115,10 +129,16 @@ class simulator(object):
         aqstr = 'Active queue info:\n'
         for queue in self.sendingqueues:
             aqstr += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.bw//1000000)
-        cqstr = 'Completed queue info:\n'
-        for queue in self.completedqueues:
-            cqstr += 'Queue index:%d, Total size:%d Mb, Duration:%d ms\n'%(queue.index, queue.flow.size//1000000,          queue.duration)
-        debugstr = line+ timerstr + line+ aqstr+ line+ cqstr+ line
+        if len(self.completedqueues) > 0 :
+            cqstr = 'Completed queue info:\n'
+            for queue in self.completedqueues:
+                cqstr += 'Queue index:%d, Total size:%d Mb, Duration:%d ms\n'%(queue.index, queue.flow.size//              1000000, queue.duration)
+            cqstr += line
+        else:
+            cqstr = ''
+        ##NOTE: We delete the completed queues that have been print in log
+        self.completedqueues = []
+        debugstr = line+ timerstr + line+ aqstr+ line+ cqstr + info
         print(debugstr)
         with open('log/log','a') as f:
             f.write(debugstr)
@@ -143,11 +163,11 @@ class simulator(object):
             if ret:
                 break
             if(temp - t_last > self.t_interval):
-                # actq, cptq = self.Getinfo()
-                # res = scheduler(actq, cptq)
-                # self.control(res)
-                # t_last = temp
-                self.Loginfo(temp)
+                actq, cptq = self.Getinfo()
+                res, info = self.scheduler.train(actq, cptq)
+                self.control(res)
+
+                self.Loginfo(temp,info)
                 t_last = temp
             else:
                 pass

@@ -23,7 +23,7 @@ BATCH_SIZE = 32 # size of minibatch
 
 class DQN():
   # DQN Agent
-  def __init__(self, env):
+  def __init__(self):
     # init experience replay
     self.replay_buffer = deque()
     # init some parameters

@@ -22,10 +22,10 @@ class Flow(object):
 
 class Squeue(object):
     def __init__(self, flow, starttime, index):
-        self.flow = flow    #infomation of this flow
+        self.flow = flow            #infomation of this flow
         self.residualsize = flow.size    #residual size of this flow
-        self.priority = 1   #the sending priority
-        self.status = 0     #sending status, 0 for uncompleted and 1 for completed
+        self.priority = 1           #the sending priority
+        self.status = 0             #sending status, 0 for uncompleted and 1 for completed
         self.starttime = starttime  #the start time 
         self.duration = -1          #the duration of transmission
         self.bw = 0                 #the current bandwidth
@@ -57,21 +57,23 @@ class Squeue(object):
         '''
         res = {}
         #active flow
-        if self.status :
-            res['src'] = self.flow['src']
-            res['dst'] = self.flow['dst']
-            res['protocol'] = self.flow['protocol']
-            res['sp'] = self.flow['sp']
-            res['dp'] = self.flow['dp']
+        if self.status == 0:
+            res['src'] = self.flow.src
+            res['dst'] = self.flow.dst
+            res['protocol'] = self.flow.protocol
+            res['sp'] = self.flow.sp
+            res['dp'] = self.flow.dp
             res['priority'] = self.priority
+            res['sentsize'] = self.flow.size - self.residualsize
+            res['qindex'] = self.index
             return res
         #completed flow
         else:
-            res['src'] = self.flow['src']
-            res['dst'] = self.flow['dst']
-            res['protocol'] = self.flow['protocol']
-            res['sp'] = self.flow['sp']
-            res['dp'] = self.flow['dp']
+            res['src'] = self.flow.src
+            res['dst'] = self.flow.dst
+            res['protocol'] = self.flow.protocol
+            res['sp'] = self.flow.sp
+            res['dp'] = self.flow.dp
             res['duration'] = self.duration
-            res['size'] = self.flow['size']
+            res['size'] = self.flow.size
             return res           
