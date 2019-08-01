@@ -21,7 +21,7 @@ class Flow(object):
         print ('rtime:%d, src:%d, dst:%d, source port:%d, destination port:%d, size:%d, tag: %d')%(self.rtime,      self.src, self.dst, self.sp, self.dp, self.size, self.tag)
 
 class Squeue(object):
-    def __init__(self, flow, starttime):
+    def __init__(self, flow, starttime, index):
         self.flow = flow    #infomation of this flow
         self.residualsize = flow.size    #residual size of this flow
         self.priority = 1   #the sending priority
@@ -29,6 +29,7 @@ class Squeue(object):
         self.starttime = starttime  #the start time 
         self.duration = -1          #the duration of transmission
         self.bw = 0                 #the current bandwidth
+        self.index = index          #queue index
 
 
     def update(self, bandwidth, interval, temp):
