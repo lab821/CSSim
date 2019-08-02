@@ -35,11 +35,15 @@ class DQNscheduler():
         current_throughout = self.throughout(cptq)
         if self.last_througout == 0:
             if current_throughout == 0:
-                reward = 1
+                reward = 0
             else:
-                reward = 10 
+                reward = 1 
         else:
             reward = current_throughout/self.last_througout
+            if reward > 1:
+                reward = reward / 10
+            else:
+                reward = reward - 1
 
         done = False
 
@@ -50,8 +54,6 @@ class DQNscheduler():
         self.last_state = state
         self.last_action = action
         self.last_througout = current_throughout
-
-        print ('Evaluation Reward:',reward)
 
         #analyzing the meaning of actions
         ret = self.actionparser(action)

@@ -6,7 +6,7 @@ import time
 import os
 from squeue import Flow, Squeue
 from scheduler import DQNscheduler
-
+import interface
 
 class simulator(object):
     def __init__(self, trace, mode):
@@ -21,7 +21,10 @@ class simulator(object):
         self.counter = 1            #counter of the total queue in the simulator
         self.mode = mode            #simulator mode(once or cyclic)
         self.latestcpti = 0         #record the latest completed flow index in a training period
-        self.scheduler = DQNscheduler() #The DQN scheduler
+        ##TESTING: FOR TEST
+        #self.scheduler = DQNscheduler() #The DQN scheduler
+        self.httpinterface = interface.HTTPinterface()    #http interface for information query
+        self.httpinterface.start()     #start the httpserver process
 
     def prepare(self, temp):
         '''
@@ -45,6 +48,7 @@ class simulator(object):
             #Once mode
             else:
                 self.Loginfo(temp)
+                ##DEBUG:print info
                 print('Timer: %d ms. Simulation completed.'%(temp - self.starttime))
                 return True
         for index, row in self.data.iterrows():
@@ -68,6 +72,9 @@ class simulator(object):
             interval: Time interval between two calls
             temp: Current timestamp
         '''        
+        interface_info = {}
+        interface_info['timer'] = temp - self.starttime
+        flows_info = []
         for i in range(len(self.sendingqueues)-1, -1, -1):
             queue = self.sendingqueues[i]
             if queue.priority:
@@ -79,7 +86,18 @@ class simulator(object):
                     self.hpc -= 1
             else:
                 queue.bw = 0
-                
+            row = {}
+            row['queue_index'] = queue.index
+            row['src'] = queue.flow.src
+            row['dst'] = queue.flow.dst
+            row['protocol'] = queue.flow.protocol
+            row['sp'] = queue.flow.sp
+            row['dp'] = queue.flow.dp
+            row['bw'] = queue.bw
+            flows_info.append(row)
+        interface_info['Active flows'] = flows_info
+        interface.data = interface_info
+
     def Getinfo(self):
         '''
         Get the current active queues and completion queues information
@@ -139,7 +157,8 @@ class simulator(object):
         ##NOTE: We delete the completed queues that have been print in log
         self.completedqueues = []
         debugstr = line+ timerstr + line+ aqstr+ line+ cqstr + info
-        print(debugstr)
+        ##DEBUG:print log in console
+        #print(debugstr)
         with open('log/log','a') as f:
             f.write(debugstr)
     
@@ -163,10 +182,11 @@ class simulator(object):
             if ret:
                 break
             if(temp - t_last > self.t_interval):
-                actq, cptq = self.Getinfo()
-                res, info = self.scheduler.train(actq, cptq)
-                self.control(res)
-
+                ##TESTING: Temporarily shut down DQN
+                info = ''
+                # actq, cptq = self.Getinfo()
+                # res, info = self.scheduler.train(actq, cptq)
+                # self.control(res)
                 self.Loginfo(temp,info)
                 t_last = temp
             else:
