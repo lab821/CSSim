@@ -9,7 +9,7 @@ from scheduler import DQNscheduler
 import interface
 
 class simulator(object):
-    def __init__(self, trace, mode):
+    def __init__(self, trace, mode, algorithm = None):
         self.data = pd.read_csv(trace)  #Flow trace 
         self.data_backup = self.data    #Flow trace backup for cyclic mode
         self.p_interval = 100       #process interval
@@ -20,11 +20,21 @@ class simulator(object):
         self.hpc = 0                #counter of high priority flow 
         self.counter = 1            #counter of the total queue in the simulator
         self.mode = mode            #simulator mode(once or cyclic)
+        self.cstime = 0             #start time of last cycle(for cyclic mode)
         self.latestcpti = 0         #record the latest completed flow index in a training period
-        ##TESTING: FOR TEST
-        #self.scheduler = DQNscheduler() #The DQN scheduler
         self.httpinterface = interface.HTTPinterface()    #http interface for information query
         self.httpinterface.start()     #start the httpserver process
+
+        if algorithm == 'DQN':
+            self.scheduler = DQNscheduler() #The DQN scheduler
+            info = 'Start simulation. mode:'
+        else:
+            self.scheduler = None           #No scheduler
+
+        mode_info = 'Cycle' if self.mode else 'Once'
+        #al_info = algorithm
+        info = 'Start simulation. Mode:%s. Algorithm:%s\n'%(mode_info, algorithm)
+        self.Logprinter(info)
 
     def prepare(self, temp):
         '''
@@ -45,6 +55,14 @@ class simulator(object):
                 total_interval = temp - self.starttime
                 data.loc[:,'rtime'] += total_interval
                 self.data = data
+                if self.cstime == 0:
+                    duration = temp -self.starttime
+                else:
+                    duration = temp - self.cstime 
+                self.cstime = temp
+                line = '%50s\n'%(50*'-')
+                info = line +'Cyclic mode INFO. Last cycle duration: %d\n'%duration + line
+                self.Logprinter(info)
             #Once mode
             else:
                 self.Loginfo(temp)
@@ -75,10 +93,11 @@ class simulator(object):
         interface_info = {}
         interface_info['timer'] = temp - self.starttime
         flows_info = []
+        share_count = self.hpc
         for i in range(len(self.sendingqueues)-1, -1, -1):
             queue = self.sendingqueues[i]
             if queue.priority:
-                bw = int(self.bandwidth / self.hpc)
+                bw = int(self.bandwidth / share_count)
                 ret = queue.update(bw, interval, temp)
                 if ret:
                     self.completedqueues.append(queue)
@@ -159,8 +178,15 @@ class simulator(object):
         debugstr = line+ timerstr + line+ aqstr+ line+ cqstr + info
         ##DEBUG:print log in console
         #print(debugstr)
-        with open('log/log','a') as f:
-            f.write(debugstr)
+        self.Logprinter(debugstr)
+    
+    def Logprinter(self,info):
+        '''
+        print log info into log file
+        '''
+        log_path = 'log/log'
+        with open(log_path,'a') as f:
+            f.write(info)   
     
     ###############TODO: make the control into non-blocking control#########################
     def run(self):
@@ -182,11 +208,12 @@ class simulator(object):
             if ret:
                 break
             if(temp - t_last > self.t_interval):
-                ##TESTING: Temporarily shut down DQN
+                ##schedule
                 info = ''
-                # actq, cptq = self.Getinfo()
-                # res, info = self.scheduler.train(actq, cptq)
-                # self.control(res)
+                if self.scheduler != None:
+                    actq, cptq = self.Getinfo()
+                    res, info = self.scheduler.train(actq, cptq)
+                    self.control(res)
                 self.Loginfo(temp,info)
                 t_last = temp
             else:
