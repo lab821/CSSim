@@ -1,126 +1,176 @@
-//max label range size
-var maxsize = 60;
-
-//chart config
-var config = {
-    type: 'line',
-    data: {
-        labels: new Array(maxsize),
-        datasets: []
-    },
-    options: {
-        responsive: true,
-        title: {
-            display: true,
-            text: 'Active flows forwarding rate'
-        },
-        tooltips: {
-            mode: 'index',
-            intersect: false,
-        },
-        hover: {
-            mode: 'nearest',
-            intersect: true
-        },
-        scales: {
-            xAxes: [{
-                display: true,
-                scaleLabel: {
-                    display: true,
-                    labelString: 'Timer'
-                }
-            }],
-            yAxes: [{
-                display: true,
-                scaleLabel: {
-                    display: true,
-                    labelString: 'Value'
-                }
-            }]
-        }
-    }
-};
-
 //The plot 
-window.onload = function() {
-    var ctx = document.getElementById('canvas').getContext('2d');
-    window.myLine = new Chart(ctx, config);
+var t_Chart = echarts.init(document.getElementById('t_chart'));
+var f_Chart = echarts.init(document.getElementById('f_chart'));
+//max label range size
+var maxsize_t = 240;
+var maxsize_f = 600;
+
+//chart config of queues' traffic 
+traffic_option = {
+    title: {
+        text: 'Traffic of each queue'
+    },
+    tooltip: {
+        trigger: 'axis'
+    },
+    xAxis: {
+        type: 'value',
+        splitLine: {
+            show: false
+        },
+        min: 0,
+        max: maxsize_t/2
+    },
+    yAxis: {
+        type: 'value'
+    },
+    series: []
 };
 
-var index_list = []; //Save current stored flow index
+//chart config of each flow's traffic
+flows_option = {
+    title: {
+        text: 'Traffic of each flow'
+    },
+    legend:{
+        data:[]
+    },
+    tooltip: {
+        trigger: 'axis'
+    },
+    xAxis: {
+        type: 'value',
+        splitLine: {
+            show: false
+        },
+        min: 0,
+        max: maxsize_t/2
+    },
+    yAxis: {
+        type: 'value'
+    },
+    series: []
+};
 
-window.chartColors = {
-	red: 'rgb(255, 99, 132)',
+var index_list = []; //Save current stored queue index
+var flow_list = []; //save current stored flow index
+
+chartColors = {
+    red: 'rgb(255, 99, 132)',
+    blue: 'rgb(54, 162, 235)',
+    green: 'rgb(75, 192, 192)',
 	orange: 'rgb(255, 159, 64)',
 	yellow: 'rgb(255, 205, 86)',
-	green: 'rgb(75, 192, 192)',
-	blue: 'rgb(54, 162, 235)',
 	purple: 'rgb(153, 102, 255)',
 	grey: 'rgb(201, 203, 207)'
 };
 
-var colorNames = Object.keys(window.chartColors);   //for color changing
+var colorNames = Object.keys(chartColors);   //for color changing
 
-function requestinfo()
+setInterval(function()
 {
     $.get("http://localhost:17777",{},function(res){
+        //extract information
         var timer = res['timer']/1000;
         timer = timer.toFixed(1);
         var flows = res['Active flows'];
 
-        config.data.labels.push(timer);
-        if(config.data.labels.length > maxsize){
-            config.data.labels.splice(0,1);
-        }
+        //update range of xAxis
+        traffic_option.xAxis.max = parseInt(timer)+1;
+        traffic_option.xAxis.min = parseInt(timer)>=maxsize_t/2?parseInt(timer)-maxsize_t/2:0;
 
+        flows_option.xAxis.max = parseInt(timer)+1;
+        flows_option.xAxis.min = parseInt(timer)>=maxsize_f/2?parseInt(timer)-maxsize_f/2:0;
+
+        //update each queue
         for(var i = 0, len = flows.length; i < len; i++)
         {
-            var j = index_list.indexOf(flows[i]['queue_index'])
-            var bw = flows[i]['bw'] / 1000000
-            if(j != -1)
+            var bw = flows[i]['bw'] / 1000000;
+            //for flows_option
+            //update flows' stats
+            var flow_5tuple =  flows[i]['src']+':'+flows[i]['sp']+'-'+flows[i]['dst']+':'+flows[i]['dp'];
+            var f = flow_list.indexOf(flow_5tuple);
+            if(f != -1)
             {
-                config.data.datasets[j].data.push(bw);
+                flows_option.series[f].data.push([timer,bw]);
             }
             else
             {
-                var colorName = colorNames[config.data.datasets.length % colorNames.length];
+                var colorName = colorNames[flow_list.length % colorNames.length];
+                var newColor = chartColors[colorName];
+                var new_data = {
+                    name: flow_5tuple,
+                    color: newColor,
+                    type: 'line',
+                    //stack:'flow',
+                    //areaStyle: {},
+                    data: [[timer,bw]]
+                };                
+                flows_option.series.push(new_data);
+                flow_list.push(flow_5tuple);
+                flows_option.legend.data.push(flow_5tuple);
+            }
+
+            //for traffic_option
+            //the index of this flow in chart queue
+            var j = index_list.indexOf(flows[i]['queue_index']);
+            //if exist
+            if(j != -1)
+            {
+                traffic_option.series[j].data.push([timer,bw]);
+            }
+            //not exist
+            else
+            {
+                var colorName = colorNames[flows[i]['queue_index'] % colorNames.length];
                 
-                var newColor = window.chartColors[colorName];
-                var data = {
-                    label: 'Flow: ' + flows[i]['queue_index'],
-                    backgroundColor: newColor,
-                    borderColor: newColor,
-                    data: new Array(maxsize),
-                    fill: false,
+                var newColor = chartColors[colorName];
+                var new_data = {
+                    name: 'Flow: ' + flows[i]['queue_index'],
+                    color: newColor,
+                    type: 'line',
+                    data: [[timer,bw]]
                 };
-                data.data.push(bw);
-                config.data.datasets.push(data);
-                index_list.push(flows[i]['queue_index'])
+                traffic_option.series.push(new_data);
+                //option.legend.data.push(new_data.name);
+                index_list.push(flows[i]['queue_index']);
             }
         }
 
-        for(var i = 0, len = config.data.datasets.length; i < len; i++)
+        //for flows_option
+        for(var i = 0, len = flows_option.series.length; i < len; i++)
         {
-            if(config.data.datasets[i].data.length == 0)
+            if(flows_option.series[i].data.length > maxsize_f*2)
             {
-                config.data.datasets.splice(i,1);
+                flows_option.series[i].data.splice(0,maxsize_f);
+                //flows_option.series[i].data.shift();
+            }
+            var l = flows_option.series[i].data.length; 
+            if(flows_option.series[i].data[l-1][0] != timer)
+            {
+                flows_option.series[i].data.push([timer,0]);
+            }
+        }
+
+        //for traffic_option
+        //delete 
+        for(var i = 0, len = traffic_option.series.length; i < len; i++)
+        {
+            if(traffic_option.series[i].data.length == 0)
+            {
+                traffic_option.series.splice(i,1);
+                //option.legend.data.splice(i,1);
                 index_list.splice(i,1);
                 i -=1 ;
                 len -=1 ;
-                window.myLine.update();
-
             }
-            else
+            else if(traffic_option.series[i].data[0][0] < parseInt(timer) - maxsize_t)
             {
-                config.data.datasets[i].data.splice(0,1);
+                traffic_option.series[i].data.shift();
             }
-            //console.log(config.data.datasets[i])
-
         }
-
-        window.myLine.update();
-        setTimeout(requestinfo,1000);
+        console.log(flows_option.series);
+        t_Chart.setOption(traffic_option);
+        f_Chart.setOption(flows_option);
     });
-};
-
-requestinfo();
+}, 500);
