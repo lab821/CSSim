@@ -5,3 +5,5 @@ generator.py
 data.csv
 log/log
 *.bak
+log/*.log
+log/*.png
