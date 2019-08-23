@@ -21,6 +21,10 @@ FINAL_EPSILON = 0.01 # final value of epsilon
 REPLAY_SIZE = 10000 # experience replay buffer size
 BATCH_SIZE = 32 # size of minibatch
 
+NUM_A = 5
+NUM_F = 5
+
+
 class DQN():
   # DQN Agent
   def __init__(self):
@@ -29,8 +33,8 @@ class DQN():
     # init some parameters
     self.time_step = 0
     self.epsilon = INITIAL_EPSILON
-    self.state_dim = 136
-    self.action_dim = 2**11
+    self.state_dim = 6*NUM_A+7*NUM_F
+    self.action_dim = 2**NUM_A
 
     self.create_Q_network()
     self.create_training_method()

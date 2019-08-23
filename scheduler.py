@@ -5,6 +5,8 @@ from algorithms.dqn import DQN
 import pandas as pd
 import numpy as np
 
+NUM_A = 5
+NUM_F = 5
 
 def scheduler(actq, cptq):
     res = {}
@@ -13,7 +15,7 @@ def scheduler(actq, cptq):
 class DQNscheduler():
     def __init__(self):
         self.agent = DQN()
-        self.last_state = np.zeros(136, dtype = np.int)
+        self.last_state = np.zeros(6*NUM_A+7*NUM_F, dtype = np.int)
         self.last_action = 0
         self.last_througout = 0
         self.key = []
@@ -41,8 +43,10 @@ class DQNscheduler():
         else:
             reward = current_throughout/self.last_througout
             if reward > 1:
+                # (0, 1) U (1, +)
                 reward = reward / 10
             else:
+                # (-1, 0)
                 reward = reward - 1
 
         done = False
@@ -81,12 +85,14 @@ class DQNscheduler():
             cptq: the infomation fo completed flows
         '''
         temp = actq.sort_values(by='sentsize')
-        state = np.zeros(136, dtype = np.int)
+        active_num = NUM_A
+        finished_num = NUM_F
+        state = np.zeros(active_num*6+finished_num*7, dtype = np.int)
         i = 0 
         self.key = []
         self.qindex_list = []
         for index, row in temp.iterrows():
-            if i > 10:
+            if i > active_num:
                 break
             else:
                 state[6*i] = row['src']
@@ -98,15 +104,15 @@ class DQNscheduler():
                 self.key.append(index)
                 self.qindex_list.append(row['qindex'])
             i += 1
-        i = 11
+        i = active_num
         for index, row in cptq.iterrows():
-                state[66+7*(i-11)] = row['src']
-                state[66+7*(i-11)+1] = row['dst']
-                state[66+7*(i-11)+2] = row['protocol']
-                state[66+7*(i-11)+3] = row['sp']
-                state[66+7*(i-11)+4] = row['dp']
-                state[66+7*(i-11)+5] = row['duration']
-                state[66+7*(i-11)+6] = row['size']
+                state[6*active_num+7*(i-active_num)] = row['src']
+                state[6*active_num+7*(i-active_num)+1] = row['dst']
+                state[6*active_num+7*(i-active_num)+2] = row['protocol']
+                state[6*active_num+7*(i-active_num)+3] = row['sp']
+                state[6*active_num+7*(i-active_num)+4] = row['dp']
+                state[6*active_num+7*(i-active_num)+5] = row['duration']
+                state[6*active_num+7*(i-active_num)+6] = row['size']
                 i += 1
         return state
     
@@ -116,7 +122,7 @@ class DQNscheduler():
         Input:
             action: 11-bit integer as action
         '''
-        bstr = '{:011b}'.format(action)
+        bstr = ('{:0%sb}'%(NUM_A)).format(action)
         res = {}
         for i in range(len(self.key)):
             res[self.key[i]] = int(bstr[-1-i])
@@ -134,8 +140,8 @@ class DQNscheduler():
         line = '%50s\n'%(50*'*')
         rewardstr = 'Evaluation Reward: %f\n'%reward
         policy = 'State and action:\n'
-        bstr = '{:011b}'.format(action)
-        for i in range(11):
+        bstr = ('{:0%sb}'%(NUM_A)).format(action)
+        for i in range(NUM_A):
             if i >= len(self.key):
                 break
             else:
