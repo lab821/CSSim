@@ -4,19 +4,19 @@ import numpy as np
 import pandas as pd
 import time
 import os
-from squeue import Flow, Squeue
+from squeue import Flow, Flowstate, MPQueue
 from scheduler import DQNscheduler
 import interface
 
 class simulator(object):
-    def __init__(self, trace, mode, algorithm = None):
+    def __init__(self, trace, mode, bandwidth = 1000000000, mq_config = None, algorithm = None):
         self.data = pd.read_csv(trace)  #Flow trace 
-        self.data_backup = self.data    #Flow trace backup for cyclic mode
-        self.p_interval = 100       #process interval
-        self.t_interval = 1000      #training interval 
+        self.data_backup = self.data.copy()    #Flow trace backup for cyclic mode
+        self.p_interval = 100       #process interval, unit : ms
+        self.t_interval = 1000      #training interval, unit : ms 
         self.sendingqueues = []     #store the uncompleted flows
         self.completedqueues = []   #store the completed flows
-        self.bandwidth = 100000000  #simulation bandwidth, unit:b/s
+        self.bandwidth = bandwidth  #simulation bandwidth, unit:b/s
         self.hpc = 0                #counter of high priority flow 
         self.counter = 1            #counter of the total queue in the simulator
         self.mode = mode            #simulator mode(once or cyclic)
@@ -24,10 +24,12 @@ class simulator(object):
         self.latestcpti = 0         #record the latest completed flow index in a training period
         self.httpinterface = interface.HTTPinterface()    #http interface for information query
         self.httpinterface.start()     #start the httpserver process
+        self.active_counter = 0     #counter of active flows
+        self.threshold_list = []    #The threshold of each queue
+        self.mpqueues = []          #The multilevel priority queues
 
         if algorithm == 'DQN':
             self.scheduler = DQNscheduler() #The DQN scheduler
-            info = 'Start simulation. mode:'
         else:
             self.scheduler = None           #No scheduler
 
@@ -36,19 +38,51 @@ class simulator(object):
         info = 'Start simulation. Mode:%s. Algorithm:%s\n'%(mode_info, algorithm)
         self.Logprinter(info)
 
+    def queue_initialization(self, bw_allocation=[1,0], threshold_list=None, mode='strict'):
+        '''
+        Initialize switch queue settings
+        Input parameter:
+            bw_allocation: The list of all the queues' bandwidth 
+            threshold_list: The list of all the queues' threshold
+        '''
+
+        #check configuration
+        #length not match
+        if len(bw_allocation) != len(threshold_list):
+            ##DEBUG: print for debug##
+            print('Configurations length not match')
+            self.Logprinter('Configurations length not match')
+            return False
+        elif np.sum(bw_allocation) != 1:
+            ##DEBUG: print for debug##
+            print('Bandwidth allocation overflow')
+            self.Logprinter('Bandwidth allocation overflow')
+            return False
+        
+        ##TODO: make the configuration effective
+        self.threshold_list = threshold_list
+        for i in range(len(threshold_list)):
+            bw = bw_allocation[i]
+            threshold = threshold_list[i]
+            queue = MPQueue(bw, threshold)
+            self.mpqueues.append(queue)
+
+        return True
+
+            
     def prepare(self, temp):
         '''
-        Adding new flow to sending queues according to the input trace data
-        when the interval is larger than the rtime of a flow trace
-        Determine whether trace simulation is complete，and perform different operations in different modes
-        In once mode:
-            Perform Loginfo and then return false to shutdown the simulator run function 
-        In cyclic mode:
-            Generating flows using backup trace data
-        Input parameter：
-            temp: Current timestamp
+            Adding new flow to sending queues according to the input trace data
+            when the interval is larger than the rtime of a flow trace
+            Determine whether trace simulation is complete，and perform different operations in different modes
+            In once mode:
+                Perform Loginfo and then return false to shutdown the simulator run function 
+            In cyclic mode:
+                Generating flows using backup trace data
+            Input parameter：
+                temp: Current timestamp
         '''
-        if self.data.empty and len(self.sendingqueues)==0:
+        if self.data.empty and self.active_counter==0:
             #Cyclic mode
             if self.mode:
                 data = self.data_backup.copy()
@@ -74,14 +108,30 @@ class simulator(object):
             if temp - self.starttime >= interval:
                 f = Flow(row)
                 q_index = self.counter
-                s = Squeue(f, temp, q_index)
-                self.counter += 1
-                self.hpc += 1
-                self.sendingqueues.append(s)
+                s = Flowstate(f, temp, q_index)
+                #self.counter += 1
+                #self.hpc += 1
+                self.addflow(s)
                 self.data = self.data.drop(index)
             else:
                 break
         return False
+
+    def addflow(self, flow):
+        # add a new flow
+        self.active_counter += 1
+        #distribute the flow to the appropriate queue
+        self.distribute(flow)
+    
+    def distribute(self, flow):
+        #distribute the flow to the appropriate queue according to the sentsize and threshold
+        
+        sentsize = flow.sentsize
+        for i in range(len(self.threshold_list)):
+            if self.threshold_list[i] > sentsize:
+                self.mpqueues[i].push(flow)
+                return 
+        self.mpqueues[-1].push(flow)
 
     def updatequeue(self, interval, temp):
         '''
@@ -90,33 +140,30 @@ class simulator(object):
             interval: Time interval between two calls
             temp: Current timestamp
         '''        
-        interface_info = {}
-        interface_info['timer'] = temp - self.starttime
-        flows_info = []
-        share_count = self.hpc
-        for i in range(len(self.sendingqueues)-1, -1, -1):
-            queue = self.sendingqueues[i]
-            if queue.priority:
-                bw = int(self.bandwidth / share_count)
-                ret = queue.update(bw, interval, temp)
-                if ret:
-                    self.completedqueues.append(queue)
-                    self.sendingqueues.pop(i)
-                    self.hpc -= 1
-            else:
-                queue.bw = 0
-            row = {}
-            row['queue_index'] = queue.index
-            row['src'] = queue.flow.src
-            row['dst'] = queue.flow.dst
-            row['protocol'] = queue.flow.protocol
-            row['sp'] = queue.flow.sp
-            row['dp'] = queue.flow.dp
-            row['bw'] = queue.bw
-            flows_info.append(row)
-        interface_info['Active flows'] = flows_info
-        interface.data = interface_info
+        ##for WEB UI TODO:
+        # interface_info = {}
+        # interface_info['timer'] = temp - self.starttime
+        
+        #flow_info list
+        #flows_info = []
+        
+        cpt_list =[]    #completed flows in this cycle 
+        pop_list =[]    #overflow threshold flows in this cycle
+        for queue in self.mpqueues:
+            cpt, pop = queue.update(interval, temp)
+            #TODO: use cpt_list instead of completedqueues
+            self.cpt_list.extend(cpt)
+            pop_list.extend(pop)
+        
+        #distribute the overflow flows, can be optimazed
+        for flow in pop_list:
+            self.distribute(flow) 
+        
+        ##TODO:
+        # interface_info['Active flows'] = flows_info
+        # interface.data = interface_info
 
+    #TODO: need update 
     def Getinfo(self):
         '''
         Get the current active queues and completion queues information
@@ -125,24 +172,21 @@ class simulator(object):
         '''
         actq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'priority', 'sentsize', 'qindex'])
         cptq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'duration', 'size'])
-        for queue in self.sendingqueues:
-            row = queue.getinfo()
-            actq = actq.append(row, ignore_index=True)
-        ##NOTE:This change is followed by the change of removal of printed queues
-        # for i in range(len(self.completedqueues)-1, -1, -1):
-        #     queue = self.completedqueues[i]
-        #     if queue.index == self.latestcpti:
-        #         break
-        #     row = queue.getinfo()
-        #     cptq = cptq.append(row, ignore_index=True)
-        # if len(self.completedqueues) > 0:
-        #     self.latestcpti = self.completedqueues[-1].index
-        ##NOTE:Ibid
-        for queue in self.completedqueues:
-            row = queue.getinfo()
+        
+        #activate flow
+        for queue in self.mpqueues:
+            for flow in queue.flow_list:
+                row = flow.getinfo()
+                actq = actq.append(row, ignore_index=True)
+
+        #completed flow
+        for flow in self.cpt_list:
+            row = flow.getinfo()
             cptq = cptq.append(row, ignore_index=True)
+            
         return actq, cptq
     
+    #TODO: update 
     def control(self, res):
         '''
         Rate control by modifying the priority of sending queue
@@ -150,11 +194,10 @@ class simulator(object):
         Input parameter：
             res: flow control information returned by scheduling module
         '''
-        for i in res.keys():
-            change = res[i] - self.sendingqueues[i].priority
-            self.sendingqueues[i].priority = res[i]
-            self.hpc = self.hpc + change  #change the high priority flow counter
+        #update threshold_list of each queue
+        self.threshold_list = res
 
+    #TODO: update
     def Loginfo(self,temp, info = ''):
         '''
         Print info in console and save in log file
@@ -165,7 +208,7 @@ class simulator(object):
         timerstr = 'Timer: %d ms.\n'%(temp - self.starttime)
         aqstr = 'Active queue info:\n'
         for queue in self.sendingqueues:
-            aqstr += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.bw//1000000)
+            aqstr += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.rate//1000000)
         if len(self.completedqueues) > 0 :
             cqstr = 'Completed queue info:\n'
             for queue in self.completedqueues:
@@ -184,7 +227,7 @@ class simulator(object):
         '''
         print log info into log file
         '''
-        log_path = 'log/log'
+        log_path = 'log/log'    ##HC##
         with open(log_path,'a') as f:
             f.write(info)   
     
@@ -222,9 +265,34 @@ class simulator(object):
 
 
 if __name__ == "__main__":
+    # data path
     trace = 'data.csv'
+    # log path
     logpath = 'log/log'
+    # switch bandwidth
+    bandwidth = 100000000
+    # Multilevel queue configurations
+    bw_allocation = [0.5,0.2,0.15,0.1,0.05]
+    threshold_list = [10000,20000,30000,40000,50000]
+    mode = 'weight'
+    # clear old log 
     if os.path.exists(logpath):
         os.remove(logpath)
-    sim = simulator(trace, 1)
-    sim.run()
+    #simulator run 
+    sim = simulator(trace, 0, bandwidth)
+    sim.queue_initialization(bw_allocation, threshold_list, mode)
+    #sim.run()
+
+##TODO:
+'''
+    日志文件频繁打开的问题
+    异常处理
+    多级队列
+    两种模式：真是时钟和虚拟时钟
+
+    prepare 要改，放到多级队列中去
+    update 要改，速度由当前所在队列决定
+    严格多级队列，一个队列占据带宽，其余队列0，高队列为空时低队列发送
+    加权多级队列，
+
+'''    
