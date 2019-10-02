@@ -5,8 +5,8 @@ from algorithms.dqn import DQN
 import pandas as pd
 import numpy as np
 
-NUM_A = 5
-NUM_F = 5
+NUM_A = 3   #number of active flows
+NUM_F = 3   #number of finished flows
 
 def scheduler(actq, cptq):
     res = {}
@@ -18,6 +18,7 @@ class DQNscheduler():
         self.last_state = np.zeros(6*NUM_A+7*NUM_F, dtype = np.int)
         self.last_action = 0
         self.last_througout = 0
+        self.last_reward = 0
         self.key = []
 
     def train(self, actq, cptq):
@@ -51,12 +52,14 @@ class DQNscheduler():
 
         done = False
 
-        #train
-        self.agent.perceive(self.last_state,self.last_action,reward,state,done)
+        if reward != 0:
+            #train
+            self.agent.perceive(self.last_state,self.last_action,self.last_reward,state,done)
 
         #record state action and throughout
         self.last_state = state
         self.last_action = action
+        self.last_reward = reward
         self.last_througout = current_throughout
 
         #analyzing the meaning of actions
