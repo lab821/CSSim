@@ -7,3 +7,4 @@ log/log
 *.bak
 log/*.log
 log/*.png
+.idea
