@@ -21,8 +21,8 @@ FINAL_EPSILON = 0.01 # final value of epsilon
 REPLAY_SIZE = 10000 # experience replay buffer size
 BATCH_SIZE = 32 # size of minibatch
 
-NUM_A = 5
-NUM_F = 5
+NUM_A = 3
+NUM_F = 3
 
 
 class DQN():
