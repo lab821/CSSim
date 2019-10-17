@@ -4,9 +4,10 @@ import numpy as np
 import pandas as pd
 import time
 import os
+import interface
 from squeue import Flow, Flowstate, MPQueue
 from scheduler import DQNscheduler
-import interface
+from sys import maxsize
 
 class simulator(object):
     def __init__(self, trace, mode, bandwidth = 1000000000, mq_config = None, algorithm = None):
@@ -14,19 +15,19 @@ class simulator(object):
         self.data_backup = self.data.copy()    #Flow trace backup for cyclic mode
         self.p_interval = 100       #process interval, unit : ms
         self.t_interval = 1000      #training interval, unit : ms 
-        self.sendingqueues = []     #store the uncompleted flows
-        self.completedqueues = []   #store the completed flows
+        self.mpqueues = []          #The multilevel priority queues
+        self.cpt_list =[]           #completed flows in the latest cycle 
         self.bandwidth = bandwidth  #simulation bandwidth, unit:b/s
-        self.hpc = 0                #counter of high priority flow 
-        self.counter = 1            #counter of the total queue in the simulator
+        self.counter = 1            #counter of the total flows in the simulator
+        self.active_counter = 0     #counter of active flows
         self.mode = mode            #simulator mode(once or cyclic)
         self.cstime = 0             #start time of last cycle(for cyclic mode)
         self.latestcpti = 0         #record the latest completed flow index in a training period
-        self.httpinterface = interface.HTTPinterface()    #http interface for information query
-        self.httpinterface.start()     #start the httpserver process
-        self.active_counter = 0     #counter of active flows
+        ##DEBUG: close httpinterface 
+        #self.httpinterface = interface.HTTPinterface()    #http interface for information query
+        #self.httpinterface.start()     #start the httpserver process
+        
         self.threshold_list = []    #The threshold of each queue
-        self.mpqueues = []          #The multilevel priority queues
 
         if algorithm == 'DQN':
             self.scheduler = DQNscheduler() #The DQN scheduler
@@ -45,7 +46,9 @@ class simulator(object):
             bw_allocation: The list of all the queues' bandwidth 
             threshold_list: The list of all the queues' threshold
         '''
-
+        if threshold_list == None:
+            threshold_list = [maxsize] * len(bw_allocation)
+        
         #check configuration
         #length not match
         if len(bw_allocation) != len(threshold_list):
@@ -58,11 +61,11 @@ class simulator(object):
             print('Bandwidth allocation overflow')
             self.Logprinter('Bandwidth allocation overflow')
             return False
-        
+
         ##TODO: make the configuration effective
         self.threshold_list = threshold_list
         for i in range(len(threshold_list)):
-            bw = bw_allocation[i]
+            bw = bw_allocation[i] * self.bandwidth
             threshold = threshold_list[i]
             queue = MPQueue(bw, threshold)
             self.mpqueues.append(queue)
@@ -109,8 +112,7 @@ class simulator(object):
                 f = Flow(row)
                 q_index = self.counter
                 s = Flowstate(f, temp, q_index)
-                #self.counter += 1
-                #self.hpc += 1
+                self.counter += 1
                 self.addflow(s)
                 self.data = self.data.drop(index)
             else:
@@ -147,12 +149,11 @@ class simulator(object):
         #flow_info list
         #flows_info = []
         
-        cpt_list =[]    #completed flows in this cycle 
         pop_list =[]    #overflow threshold flows in this cycle
         for queue in self.mpqueues:
             cpt, pop = queue.update(interval, temp)
-            #TODO: use cpt_list instead of completedqueues
             self.cpt_list.extend(cpt)
+            self.active_counter -= len(cpt)     #update activate flows count
             pop_list.extend(pop)
         
         #distribute the overflow flows, can be optimazed
@@ -206,18 +207,19 @@ class simulator(object):
         '''
         line = '%50s\n'%(50*'=')
         timerstr = 'Timer: %d ms.\n'%(temp - self.starttime)
-        aqstr = 'Active queue info:\n'
-        for queue in self.sendingqueues:
-            aqstr += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.rate//1000000)
-        if len(self.completedqueues) > 0 :
-            cqstr = 'Completed queue info:\n'
-            for queue in self.completedqueues:
-                cqstr += 'Queue index:%d, Total size:%d Mb, Duration:%d ms\n'%(queue.index, queue.flow.size//              1000000, queue.duration)
+        aqstr = 'Active flow info:\n'
+        for queue in self.mpqueues:
+            for flow in queue.flow_list:
+                aqstr += 'Flow index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(flow.index,                     flow.residualsize//1000000, flow.rate//1000000)
+        if len(self.cpt_list) > 0 :
+            cqstr = 'Completed flow info:\n'
+            for flow in self.cpt_list:
+                cqstr += 'Flow index:%d, Total size:%d Mb, Duration:%d ms\n'%(flow.index, flow.flow.size//              1000000, flow.duration)
             cqstr += line
         else:
             cqstr = ''
         ##NOTE: We delete the completed queues that have been print in log
-        self.completedqueues = []
+        self.cpt_list = []
         debugstr = line+ timerstr + line+ aqstr+ line+ cqstr + info
         ##DEBUG:print log in console
         #print(debugstr)
@@ -266,22 +268,23 @@ class simulator(object):
 
 if __name__ == "__main__":
     # data path
-    trace = 'data.csv'
+    trace = 'data1.csv'
     # log path
     logpath = 'log/log'
     # switch bandwidth
     bandwidth = 100000000
     # Multilevel queue configurations
     bw_allocation = [0.5,0.2,0.15,0.1,0.05]
-    threshold_list = [10000,20000,30000,40000,50000]
+    threshold_list = [10000,20000,30000,40000,maxsize]
     mode = 'weight'
     # clear old log 
     if os.path.exists(logpath):
         os.remove(logpath)
     #simulator run 
     sim = simulator(trace, 0, bandwidth)
-    sim.queue_initialization(bw_allocation, threshold_list, mode)
-    #sim.run()
+    #sim.queue_initialization(bw_allocation, threshold_list, mode)
+    sim.queue_initialization()
+    sim.run()
 
 ##TODO:
 '''

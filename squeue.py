@@ -43,6 +43,7 @@ class Flowstate(object):
         '''
         sentsize = rate * (interval / 1000)
         self.residualsize = self.residualsize - sentsize
+        self.sentsize = self.sentsize + sentsize
         self.rate = rate
         if self.residualsize <= 0:
             self.status = 1
@@ -84,7 +85,7 @@ class MPQueue(object):
     def __init__(self, bw, threshold):
         self.len = 0            #length of this queue
         self.flow_list = []     #The list of flowstates in this queue
-        self.threshold = threshold     #The threshold of this queue
+        self.threshold = threshold     #The threshold of this queue (upper bound)
         self.bw = bw             #bandwidth of this queue
 
     def length(self):
@@ -110,14 +111,14 @@ class MPQueue(object):
         cpt_list = []
         pop_list = []
         if policy == 'FF':
-            rate = int(self.bw / self.len)
+            rate = int(self.bw / self.len) if self.len != 0 else self.bw
             for index in range(self.len-1, -1, -1):
                 flow = self.flow_list[index]
                 ret = flow.update(rate, interval, temp)
                 if ret == 1:
                     # cpt flow
                     self.flow_list.pop(index)
-                    cpt_list.push(flow)
+                    cpt_list.append(flow)
                     self.len -= 1
                 else:
                     #not completed
