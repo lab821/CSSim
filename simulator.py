@@ -228,3 +228,4 @@ if __name__ == "__main__":
         os.remove(logpath)
     sim = simulator(trace, 1)
     sim.run()
+    ##test
