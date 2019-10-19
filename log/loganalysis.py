@@ -52,12 +52,23 @@ def reward_plot(rewards_list):
     plt.plot(sum_arr)
     plt.savefig('reward_plot.png')
 
-
-
+def fct_plot(logpath):
+    duration_list = []
+    with open(logpath,'r') as f:
+        line = f.readline()
+        while(line):
+            if 'Duration' in line:
+                duration = int(line.split(' ')[-2])
+                duration_list.append(duration)
+            line = f.readline()
     
+    print(duration_list)
     
 if __name__ == "__main__":
-    logpath = 'log'
-    cycle_duration, rewards_list = log_analysis(logpath)   
-    cycle_plot(cycle_duration)
-    reward_plot(rewards_list) 
+
+    logpath = 'log/log'
+
+    # cycle_duration, rewards_list = log_analysis(logpath)   
+    # cycle_plot(cycle_duration)
+    # reward_plot(rewards_list) 
+    fct_plot(logpath)
