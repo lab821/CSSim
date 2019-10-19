@@ -35,8 +35,8 @@ class Squeue(object):
     def update(self, bandwidth, interval, temp):
         '''
         update the residual size and status of this flow
-        if the residual size < 0 then this flow is completed and return 1
-        else return 0
+        if the residual size < 0 then this flow is completed and return True
+        else return False, the sentsize in this interval is also returned as sentsize 
         '''
         sentsize = bandwidth * (interval / 1000)
         self.residualsize = self.residualsize - sentsize
@@ -44,9 +44,9 @@ class Squeue(object):
         if self.residualsize <= 0:
             self.status = 1
             self.duration = temp - self.starttime
-            return 1
+            return sentsize, True
         else:
-            return 0
+            return sentsize, False
 
     ###############debug#########################
     def getinfo(self):
@@ -77,3 +77,36 @@ class Squeue(object):
             res['duration'] = self.duration
             res['size'] = self.flow.size
             return res           
+
+class Coflow(object):
+    def __init__(self, starttime, index):
+        self.starttime = starttime  #the start time
+        self.duration = -1          #the duration of this coflow
+        self.index = index          #coflow index
+        self.size = 0               #The sentsize of this flow group(coflow)
+        self.flow_indices = []      #The list of flow's index in this coflow
+
+    #append a new flow in this coflow
+    def append(self,flow_index):
+        self.flow_indices.append(flow_index)
+
+    #remove a flow from this coflow
+    def remove(self,flow_index):
+        self.flow_indices.remove(flow_index)        
+    
+    #Get the number of flows in this coflow
+    def length(self):
+        return len(self.flow_indices)
+    
+    #update the coflow size and duraiton
+    def update(self, sentsize, temp):
+        self.size += sentsize
+        self.duration = temp - self.starttime
+
+    #Get the infomation of this coflow
+    def getinfo(self):
+        res = {}
+        res['index'] = self.index
+        res['starttime'] = self.starttime
+        res['duration'] = self.duration
+        res['count'] = self.length()
