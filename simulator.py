@@ -29,7 +29,8 @@ class simulator(object):
         #self.httpinterface.start()     #start the httpserver process
         if granularity == 'coflow':
             self.coflow_list = {}       #The coflow list 
-            self.cpt_coflow_list= []
+            self.cpt_coflow_list= []    #completed coflow list
+            self.coflow_duration_list = []  #For calculate CCT
 
         if algorithm == 'DQN':
             self.scheduler = DQNscheduler() #The DQN scheduler
@@ -54,7 +55,11 @@ class simulator(object):
         Input parameter：
             temp: Current timestamp
         '''
+        #tag: if true, the simulator will stop else run the data again
+        #done: if true, tell the scheduler this trace has been completed   
+        tag, done = False, False
         if self.data.empty and len(self.sendingqueues)==0:
+            done = True
             #Cyclic mode
             if self.mode:
                 data = self.data_backup.copy()
@@ -68,13 +73,21 @@ class simulator(object):
                 self.cstime = temp
                 line = '%50s\n'%(50*'-')
                 info = line +'Cyclic mode INFO. Last cycle duration: %d\n'%duration + line
+                if self.granularity == 'coflow':
+                    cycle_cct = np.mean(self.coflow_duration_list)//1000
+                    info += 'CCT in last cycle is : %d s\n'%cycle_cct + line
                 self.Logprinter(info)
             #Once mode
             else:
+                tag = True
                 self.Loginfo(temp)
                 ##DEBUG:print info
-                print('Timer: %d ms. Simulation completed.'%(temp - self.starttime))
-                return True
+                info = 'Timer: %d ms. Simulation completed.\n'%(temp - self.starttime)
+                if self.granularity == 'coflow':
+                    cycle_cct = np.mean(self.coflow_duration_list)//1000
+                    info += 'CCT in last cycle is : %d s\n'%cycle_cct
+                print(info)
+                return tag, done
         for index, row in self.data.iterrows():
             interval = row['rtime']
             if temp - self.starttime >= interval:
@@ -89,7 +102,7 @@ class simulator(object):
                     self.dispatch_to_coflow(q_index, row['tag'], temp)
             else:
                 break
-        return False
+        return tag, done
 
     def dispatch_to_coflow(self, flow_index, coflow_index, temp):
         '''
@@ -167,7 +180,7 @@ class simulator(object):
         '''
         actq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'priority', 'sentsize', 'qindex'])
         cptq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'duration', 'size'])
-        coflowinfo = pd.DataFrame(columns=['index', 'starttime', 'duration', 'count'])
+        coflowinfo = pd.DataFrame(columns=['index', 'starttime', 'duration', 'count', 'sentsize'])
         for queue in self.sendingqueues:
             row = queue.getinfo()
             actq = actq.append(row, ignore_index=True)
@@ -257,6 +270,7 @@ class simulator(object):
                 coflowstr += 'Completed coflow info:\n'
                 for coflow in self.cpt_coflow_list:
                     coflowstr +='Coflow index: %s, Total size : %d Mb, Completed-Duration: %d ms\n'%(coflow.index, coflow.size//1000, coflow.duration)
+                    self.coflow_duration_list.append(coflow.duration)
                 coflowstr += line
                 ##NOTE: We delete the completed coflows that have been print in log
                 self.cpt_coflow_list = []
@@ -304,15 +318,18 @@ class simulator(object):
             interval = temp - p_last
             p_last = temp
             self.updatequeue(interval, temp)
-            ret = self.prepare(temp)
-            if ret:
+            tag, done = self.prepare(temp)
+            if tag:
                 break
             if(temp - t_last >= self.t_interval):
                 ##schedule
                 info = ''
                 if self.scheduler != None:
                     actq, cptq, coflowinfo = self.Getinfo()
-                    res, info = self.scheduler.train(actq, cptq)
+                    if self.granularity == 'coflow':
+                        res, info = self.scheduler.train(actq, cptq, coflowinfo, done)
+                    else:
+                        res, info = self.scheduler.train(actq, cptq, done)     
                     self.control(res)
                 self.Loginfo(temp,info)
                 t_last = temp
