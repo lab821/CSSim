@@ -2,6 +2,7 @@
 #TODO: Implementing a General Scheduling Algorithms Interface
 
 from algorithms.dqn import DQN
+from algorithms.ddqn import DDQN, models
 import pandas as pd
 import numpy as np
 
@@ -28,7 +29,7 @@ class DQNscheduler():
             cptq: the infomation fo completed flows     
         '''
         #state
-        state = self.stateparser(actq, cptq)
+        state = self.get_state(actq, cptq)
 
         #get action
         action = self.agent.egreedy_action(state) # e-greedy action for train
@@ -77,7 +78,7 @@ class DQNscheduler():
             res += row['size'] / row['duration']
         return res
 
-    def stateparser(self, actq, cptq):
+    def get_state(self, actq, cptq):
         '''
         Converting the active and completed flows information to a 1*136 state space
         Intput:
@@ -145,7 +146,96 @@ class DQNscheduler():
             if i >= len(self.key):
                 break
             else:
-                policy += 'Queue index:%d, Five tuple={%d,%d,%d,%d,%d}, priority: %d, action:%s\n'%                           (self.qindex_list[i], state[6*i],state[6*i+1],state[6*i+2],state[6*i+3],state[6*i+4],             state[6*i+5],bstr[-1-i])
+                policy += 'Queue index:%d, Five tuple={%d,%d,%d,%d,%d}, priority: %d, action:%s\n'%                           (self.qindex_list[i], state[6*i],state[6*i+1],state[6*i+2],state[6*i+3],
+                                state[6*i+4],state[6*i+5],bstr[-1-i])
         infostr = line + rewardstr + policy + line
         return infostr 
 
+class DDQNCS():
+    M = 5       #max coflow number to scheduler
+    size_per_line = 3   #the size of each state line
+    s_dim = size_per_line*M #size of state space  
+    a_dim = M   #size of action space
+    def __init__(self):
+        self.agent = DDQN(self.s_dim, self.a_dim)   #DDQN network
+        self.last_state = np.zeros(self.s_dim, dtype = np.float)  #the state of last train
+        self.last_action = 0        #the action of last train
+        self.scheduler_list = []    #the list of coflows' index wating for scheduling of this train
+        self.cycles = 0             #Episode continuous cycles
+        self.counter = 0            #Episode counter
+    
+    def train(self, actq, cptq, coflowinfo, done):
+        coflow_list = coflowinfo['index'].tolist()
+
+        #get state
+        state = self.get_state(coflowinfo)
+
+        #generate action
+        action = self.agent.act(state)
+        choice_index = self.scheduler_list[action]
+
+        #reward
+        reward = 0 - len(self.scheduler_list)
+
+        #train model
+        self.agent.remember(self.last_state, self.last_action, state, reward)
+        self.agent.train()
+
+        #update saved parmeter
+        self.last_state = state
+        self.last_action = action
+        self.cycles += 1
+
+        info = ''
+        if done:
+            
+            info += 'Episode %d completed: total cycles : %d\n'%(self.counter, self.cycles)
+            self.counter += 1
+            self.cycles = 0
+        #make return parmeter
+        ret = self.get_action(choice_index)
+        infostr = self.get_info(state, choice_index, reward, info)
+
+
+
+    def get_state(self, coflowinfo):
+        temp = coflowinfo.sort_values(by='sentsize')
+        state = np.zeros(self.s_dim, dtype = np.float)
+
+        i = 0
+        for index, row in temp.iterrows():
+            if i > self.M-1:
+                break
+            else:
+                state[self.size_per_line*i] = row['duration']
+                state[self.size_per_line*i + 1] = row['sentsize']
+                state[self.size_per_line*i + 2] = row['count']/1000000
+                self.scheduler_list.append(row['index'])
+            i += 1
+        return state
+
+    def get_action(self, coflow_list, choice_index):
+        value = [0]*len(coflow_list)
+        res = dict(zip(coflow_list,value))
+        res[choice_index] = 1
+        return res 
+
+    def get_info(self, state, choice_index, reward, info):
+        '''
+        Generating the log info of this time training
+        Input:
+            state: state space
+            choice_index: the choice coflow index
+            reward: current reward
+            info: extra input info 
+        '''
+        infostr = ''
+        line = '%50s\n'%(50*'*')
+        rewardstr = 'Evaluation Reward: %f\n'%reward
+        policy = 'State:\n'
+        for i in range(len(self.scheduler_list)):
+            policy += 'Coflow_index:%d, coflow_duration: %.0f, sent_size: %.2f, flow_count:%.0f\n'%                           (self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1],                   state[self.size_per_line*i+2])
+        policy += 'Action:\nChoice coflow index: %d\n'%choice_index
+            
+        infostr = line + rewardstr + policy + info + line
+        return infostr 
