@@ -165,14 +165,19 @@ class DDQNCS():
         self.counter = 0            #Episode counter
     
     def train(self, actq, cptq, coflowinfo, done):
+        print(coflowinfo)
         coflow_list = coflowinfo['index'].tolist()
 
+        
         #get state
         state = self.get_state(coflowinfo)
 
         #generate action
         action = self.agent.act(state)
-        choice_index = self.scheduler_list[action]
+        if action >= len(self.scheduler_list):
+            choice_index = -1
+        else:
+            choice_index = self.scheduler_list[action]
 
         #reward
         reward = 0 - len(self.scheduler_list)
@@ -193,12 +198,13 @@ class DDQNCS():
             self.counter += 1
             self.cycles = 0
         #make return parmeter
-        ret = self.get_action(choice_index)
+        ret = self.get_action(coflow_list, choice_index)
         infostr = self.get_info(state, choice_index, reward, info)
-
+        return ret, infostr
 
 
     def get_state(self, coflowinfo):
+        self.scheduler_list = []
         temp = coflowinfo.sort_values(by='sentsize')
         state = np.zeros(self.s_dim, dtype = np.float)
 
@@ -217,7 +223,8 @@ class DDQNCS():
     def get_action(self, coflow_list, choice_index):
         value = [0]*len(coflow_list)
         res = dict(zip(coflow_list,value))
-        res[choice_index] = 1
+        if choice_index != -1:
+            res[choice_index] = 1
         return res 
 
     def get_info(self, state, choice_index, reward, info):
