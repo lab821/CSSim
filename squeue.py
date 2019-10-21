@@ -111,3 +111,4 @@ class Coflow(object):
         res['duration'] = self.duration
         res['count'] = self.length()
         res['sentsize'] = self.size
+        return res
