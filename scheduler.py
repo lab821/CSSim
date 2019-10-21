@@ -165,9 +165,7 @@ class DDQNCS():
         self.counter = 0            #Episode counter
     
     def train(self, actq, cptq, coflowinfo, done):
-        print(coflowinfo)
         coflow_list = coflowinfo['index'].tolist()
-
         
         #get state
         state = self.get_state(coflowinfo)
@@ -214,8 +212,8 @@ class DDQNCS():
                 break
             else:
                 state[self.size_per_line*i] = row['duration']
-                state[self.size_per_line*i + 1] = row['sentsize']
-                state[self.size_per_line*i + 2] = row['count']/1000000
+                state[self.size_per_line*i + 1] = row['sentsize']/1000000
+                state[self.size_per_line*i + 2] = row['count']
                 self.scheduler_list.append(row['index'])
             i += 1
         return state
@@ -241,7 +239,7 @@ class DDQNCS():
         rewardstr = 'Evaluation Reward: %f\n'%reward
         policy = 'State:\n'
         for i in range(len(self.scheduler_list)):
-            policy += 'Coflow_index:%d, coflow_duration: %.0f, sent_size: %.2f, flow_count:%.0f\n'%                           (self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1],                   state[self.size_per_line*i+2])
+            policy += 'Coflow_index:%d, coflow_duration: %.0f ms, sent_size: %.2f Mb, flow_count: %.0f\n'%                  (self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1],                   state[self.size_per_line*i+2])
         policy += 'Action:\nChoice coflow index: %d\n'%choice_index
             
         infostr = line + rewardstr + policy + info + line
