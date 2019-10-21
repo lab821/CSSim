@@ -1,6 +1,7 @@
 # Data file format description
 
-### The data file should be a csv file with following columns:
+## The data file should be a csv file with following columns
+
 * **rtime**: Relative start time of flow
 * **src**: Source of this flow
 * **dst**: Destination of this flow
