@@ -7,14 +7,14 @@ from tensorflow.keras import models, layers, optimizers
 
 class DDQN(object):
     def __init__(self, s_dim, a_dim):
+        self.s_dim = s_dim        #state space 
+        self.a_dim = a_dim        #action space 
         self.step = 0
         self.update_freq = 200  # 模型更新频率
         self.replay_size = 2000  # 训练集大小
         self.replay_queue = deque(maxlen=self.replay_size)
         self.model = self.create_model()
         self.target_model = self.create_model()
-        self.s_dim = s_dim        #state space 
-        self.a_dim = a_dim        #action space 
 
     def create_model(self):
         """创建一个隐藏层为100的神经网络"""
