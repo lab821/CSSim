@@ -5,7 +5,7 @@ import pandas as pd
 import time
 import os
 from squeue import Flow, Squeue, Coflow
-from scheduler import DQNscheduler
+from scheduler import DQNscheduler, DDQNCS
 import interface
 
 class simulator(object):
@@ -34,7 +34,8 @@ class simulator(object):
 
         if algorithm == 'DQN':
             self.scheduler = DQNscheduler() #The DQN scheduler
-            info = 'Start simulation. mode:'
+        elif algorithm == 'DDQNCS':
+            self.scheduler = DDQNCS()
         else:
             self.scheduler = None           #No scheduler
 
@@ -198,9 +199,11 @@ class simulator(object):
             row = queue.getinfo()
             cptq = cptq.append(row, ignore_index=True)
         if self.granularity == 'coflow':
+            
             for coflow in self.coflow_list.values():
-                row = coflow.getinfo()
-                coflowinfo.append(row, ignore_index=True)
+                row = coflow.getinfo()         
+                coflowinfo = coflowinfo.append(row, ignore_index=True)
+            
         return actq, cptq, coflowinfo
     
 
@@ -220,7 +223,7 @@ class simulator(object):
                 flow_indices = self.coflow_list[coflow_index].flow_indices
                 for index in flow_indices:
                     i = index_list.index(index)
-                    change = res[coflow_index] - self.sendingqueues[i].prioirty
+                    change = res[coflow_index] - self.sendingqueues[i].priority
                     self.sendingqueues[i].priority = res[coflow_index]
                     self.hpc += change 
         else:
@@ -345,5 +348,5 @@ if __name__ == "__main__":
     logpath = 'log/log'
     if os.path.exists(logpath):
         os.remove(logpath)
-    sim = simulator(trace, 0, 'coflow')
+    sim = simulator(trace, 0, 'coflow', 'DDQNCS')
     sim.run(timer = False)
