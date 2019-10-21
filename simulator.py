@@ -29,8 +29,6 @@ class simulator(object):
         #self.httpinterface.start()     #start the httpserver process
         if granularity == 'coflow':
             self.coflow_list = {}       #The coflow list 
-            self.cpt_coflow_list= []    #completed coflow list
-            self.coflow_duration_list = []  #For calculate CCT
 
         if algorithm == 'DQN':
             self.scheduler = DQNscheduler() #The DQN scheduler
@@ -59,6 +57,8 @@ class simulator(object):
         #tag: if true, the simulator will stop else run the data again
         #done: if true, tell the scheduler this trace has been completed   
         tag, done = False, False
+
+        #One cycle completed, record infomation in log
         if self.data.empty and len(self.sendingqueues)==0:
             done = True
             #Cyclic mode
@@ -75,8 +75,13 @@ class simulator(object):
                 line = '%50s\n'%(50*'-')
                 info = line +'Cyclic mode INFO. Last cycle duration: %d\n'%duration + line
                 if self.granularity == 'coflow':
-                    cycle_cct = np.mean(self.coflow_duration_list)//1000
+                    coflow_duration = 0
+                    for coflow in self.coflow_list.values():
+                        coflow_duration += coflow.duration
+                    cycle_cct = coflow_duration//(1000*len(self.coflow_list))
                     info += 'CCT in last cycle is : %d s\n'%cycle_cct + line
+                    #reset coflow_list
+                    self.coflow_list = []
                 self.Logprinter(info)
             #Once mode
             else:
@@ -85,10 +90,15 @@ class simulator(object):
                 ##DEBUG:print info
                 info = 'Timer: %d ms. Simulation completed.\n'%(temp - self.starttime)
                 if self.granularity == 'coflow':
-                    cycle_cct = np.mean(self.coflow_duration_list)//1000
+                    coflow_duration = 0
+                    for coflow in self.coflow_list.values():
+                        coflow_duration += coflow.duration
+                    cycle_cct = coflow_duration//(1000*len(self.coflow_list))
                     info += 'CCT in last cycle is : %d s\n'%cycle_cct
                 print(info)
                 return tag, done
+
+        #prepare new flows
         for index, row in self.data.iterrows():
             interval = row['rtime']
             if temp - self.starttime >= interval:
@@ -121,7 +131,10 @@ class simulator(object):
             self.coflow_list[coflow_index] = coflow
         #append this flow in correspending coflow
         self.coflow_list[coflow_index].append(flow_index)
-    
+        #if this coflow is a low priority coflow this flow should be the same
+        if self.coflow_list[coflow_index].priority == 0:
+            self.sendingqueues[-1].priority = 0
+            self.hpc -= 1
 
     def updatequeue(self, interval, temp):
         '''
@@ -151,12 +164,7 @@ class simulator(object):
                     self.coflow_list[coflow_index].update(sentsize, temp)
                     if ret:
                         #if this flow is finished, pop it from the coflow's flow_indices
-                        #if this flow is the last one of this coflow, pop this coflow from coflow_list 
-                        #and add it to the cpt_coflow_list
                         self.coflow_list[coflow_index].remove(queue.index)
-                        if self.coflow_list[coflow_index].length() == 0:
-                            coflow = self.coflow_list.pop(coflow_index)
-                            self.cpt_coflow_list.append(coflow)
             else:
                 queue.bw = 0
             ##TESTING: CLOSE WEBUI
@@ -173,7 +181,7 @@ class simulator(object):
         # interface_info['Active flows'] = flows_info
         # interface.data = interface_info
 
-    def Getinfo(self):
+    def Getinfo(self, temp):
         '''
         Get the current active queues and completion queues information
         Two tables are returned, representing the active queues and the completed queues, respectively
@@ -201,9 +209,10 @@ class simulator(object):
         if self.granularity == 'coflow':
             
             for coflow in self.coflow_list.values():
-                row = coflow.getinfo()         
-                coflowinfo = coflowinfo.append(row, ignore_index=True)
-            
+                if coflow.active:
+                    coflow.duration = temp - coflow.starttime
+                    row = coflow.getinfo()         
+                    coflowinfo = coflowinfo.append(row, ignore_index=True)
         return actq, cptq, coflowinfo
     
 
@@ -220,6 +229,9 @@ class simulator(object):
             #in contrary the flows in low priority coflows should  waite
             index_list = self.get_flow_index()
             for coflow_index in res.keys():
+                #change the priority of this coflow
+                self.coflow_list[coflow_index].priority = res[coflow_index]
+                #change each flow's priority belongs to this coflow
                 flow_indices = self.coflow_list[coflow_index].flow_indices
                 for index in flow_indices:
                     i = index_list.index(index)
@@ -230,7 +242,7 @@ class simulator(object):
             for i in res.keys():
                 change = res[i] - self.sendingqueues[i].priority
                 self.sendingqueues[i].priority = res[i]
-                self.hpc = self.hpc + change  #change the high priority flow counter
+                self.hpc += change  #change the high priority flow counter
     
     def get_flow_index(self):
         '''
@@ -248,39 +260,53 @@ class simulator(object):
         '''
         Print info in console and save in log file
         Input parameter：
-            temp: Current timestamp
+            temp: current timestamp
+            info: additional infomation
         '''
+
         line = '%50s\n'%(50*'=')
         timerstr = 'Timer: %d ms.\n'%(temp - self.starttime)
-        aqstr = 'Active queue info:\n'
-        for queue in self.sendingqueues:
-            aqstr += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.bw//1000000)
-        if len(self.completedqueues) > 0 :
-            cqstr = 'Completed queue info:\n'
-            for queue in self.completedqueues:
-                cqstr += 'Queue index:%d, Total size:%d Mb, Duration: %d ms\n'%(queue.index, queue.flow.size//              1000000, queue.duration)
-            cqstr += line
-            ##NOTE: We delete the completed queues that have been print in log
-            self.completedqueues = []
-        else:
-            cqstr = ''
-        if self.granularity == 'coflow':
-            coflowstr = 'Active coflow info:\n'
-            for coflow in self.coflow_list.values():
-                coflowstr +='Coflow index: %s, Sent size : %d Mb, Flow count: %d , Coflow-Duration: %d ms\n'%(coflow.index, coflow.size//1000, coflow.length(), coflow.duration)
-            coflowstr += line
-            if len(self.cpt_coflow_list) > 0 :
-                coflowstr += 'Completed coflow info:\n'
-                for coflow in self.cpt_coflow_list:
-                    coflowstr +='Coflow index: %s, Total size : %d Mb, Completed-Duration: %d ms\n'%(coflow.index, coflow.size//1000, coflow.duration)
-                    self.coflow_duration_list.append(coflow.duration)
-                coflowstr += line
-                ##NOTE: We delete the completed coflows that have been print in log
-                self.cpt_coflow_list = []
-        else:
-            coflowstr = ''
 
-        debugstr = line+ timerstr + line+ aqstr+ line+ cqstr + coflowstr +info
+        ##TESTING: CLOSE for debug
+        # #flow level info
+        # #active flows info:
+        # aq_str = 'Active queue info:\n'
+        # for queue in self.sendingqueues:
+        #     aq_str += 'Queue index:%d, Residual size:%d Mb, Current bandwidth:%d Mb\n'%(queue.index,                        queue.residualsize//1000000, queue.bw//1000000)
+
+        # #completed flows info
+        # if len(self.completedqueues) > 0 :
+        #     cq_str = 'Completed queue info:\n'
+        #     for queue in self.completedqueues:
+        #         cq_str += 'Queue index:%d, Total size:%d Mb, Duration: %d ms\n'%(queue.index, queue.flow.size//              1000000, queue.duration)
+        #     cq_str += line
+        #     self.completedqueues = []
+        # else:
+        #     cq_str = ''
+        flow_str = ''
+        # flow_str = aq_str + line+ cq_str
+        
+
+        #coflow level info
+        if self.granularity == 'coflow':
+            act_coflow_str = 'Active coflow info:\n'
+            cpt_coflow_str = 'Completed coflow info:\n'
+            for coflow in self.coflow_list.values():
+                if coflow.active:
+                    continue
+                    # act_coflow_str +='Coflow index: %s, Sent size : %d Mb, Flow count: %d , Coflow-Duration: %d ms\n'%(coflow.index, coflow.size//1000000, coflow.length(), coflow.duration)
+                elif coflow.printed == False:
+                    cpt_coflow_str +='Coflow index: %s, Total size : %d Mb, Total flow count: %d , Completed-Duration: %d ms\n'%(coflow.index, coflow.size//1000000, coflow.flow_count, coflow.duration)
+                    #change printed status
+                    self.coflow_list[coflow.index].printed = True
+            #TESTING: turn off duplicate information
+            #coflow_str = act_coflow_str + line + cpt_coflow_str + line
+            coflow_str = cpt_coflow_str + line
+        else:
+            coflow_str = ''
+
+        #total infomation
+        debugstr = line+ timerstr + line + flow_str + coflow_str + info
         ##DEBUG:print log in console
         #print(debugstr)
         self.Logprinter(debugstr)
@@ -328,7 +354,7 @@ class simulator(object):
                 ##schedule
                 info = ''
                 if self.scheduler != None:
-                    actq, cptq, coflowinfo = self.Getinfo()
+                    actq, cptq, coflowinfo = self.Getinfo(temp)
                     if self.granularity == 'coflow':
                         res, info = self.scheduler.train(actq, cptq, coflowinfo, done)
                     else:
@@ -344,7 +370,7 @@ class simulator(object):
                 return
 
 if __name__ == "__main__":
-    trace = 'data1.csv'
+    trace = 'data/data-example.csv'
     logpath = 'log/log'
     if os.path.exists(logpath):
         os.remove(logpath)
