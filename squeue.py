@@ -81,32 +81,32 @@ class Squeue(object):
 class Coflow(object):
     def __init__(self, starttime, index):
         self.starttime = starttime  #the start time
-        self.duration = -1          #the duration of this coflow
+        self.duration = 0           #the duration of this coflow
         self.index = index          #coflow index
         self.size = 0               #The sentsize of this flow group(coflow)
         self.flow_count = 0         #record the total count of flows belong to this coflow
-        self.flow_indices = []      #The list of flow's index in this coflow
+        self.flow_list = []         #The list of flows in this coflow
         self.active = False         #the flag to show if there are active flows in this coflow
         self.printed = False        #the flag to assign if this coflow infomation has been printed
         self.priority = 1           #the priority of this coflow
 
     #append a new flow in this coflow
-    def append(self,flow_index):
+    def append(self,flow):
         if self.active == False:
             self.active = True
             self.printed = False
         self.flow_count += 1
-        self.flow_indices.append(flow_index)
+        self.flow_list.append(flow)
 
     #remove a flow from this coflow
-    def remove(self,flow_index):
-        self.flow_indices.remove(flow_index)        
+    def remove(self,flow):
+        self.flow_list.remove(flow)        
         if self.length() == 0:
             self.active = False
 
     #Get the number of flows in this coflow
     def length(self):
-        return len(self.flow_indices)
+        return len(self.flow_list)
     
     #update the coflow size and duraiton
     def update(self, sentsize, temp):
