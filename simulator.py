@@ -9,7 +9,7 @@ from scheduler import DQNscheduler, DDQNCS
 import interface
 
 class simulator(object):
-    def __init__(self, trace, mode, granularity, log_level = 5, algorithm = None):
+    def __init__(self, trace, mode, granularity, log_level = 5, algorithm = None, compensation = None):
         """
         init the simulator
         Input parameters:
@@ -25,6 +25,8 @@ class simulator(object):
                 the level of log printer, 5 for all flows and coflows infomation, 4 for only all the coflow info, 3 for only completed coflow infomation, 2 for only scheduler log, 1 is reserved, 0 for no loginfo 5 as default
             algorithm : str
                 the scheduler algorithm, None as default (per-flow fairness)
+            compensation : str 
+                the bandwidth compensation mechanism , None for default
         """
         self.data = pd.read_csv(trace)  #Flow trace 
         self.data_backup = self.data    #Flow trace backup for cyclic mode
@@ -39,8 +41,8 @@ class simulator(object):
         self.granularity = granularity  #The granularity of scheduler
         self.cstime = 0             #start time of last cycle(for cyclic mode)
         self.latestcpti = 0         #record the latest completed flow index in a training period
-        self.log_level = log_level
-        
+        self.log_level = log_level  #log level 
+        self.compensation = compensation    #bandwidth compensation mechanism, None for default
         ##TESTING: CLOSE WEBUI
         #self.httpinterface = interface.HTTPinterface()    #http interface for information query
         #self.httpinterface.start()     #start the httpserver process
@@ -166,6 +168,10 @@ class simulator(object):
         ##TESTING: CLOSE WEBUI
         # interface_info = {}
         # interface_info['timer'] = temp - self.starttime
+        if self.hpc == 0 and self.compensation != None:
+            for flow in self.sendingqueues:
+                flow.priority = 1
+            self.hpc = len(self.sendingqueues)
         flows_info = []
         share_count = self.hpc
         for i in range(len(self.sendingqueues)-1, -1, -1):
