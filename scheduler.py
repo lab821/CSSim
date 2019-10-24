@@ -160,6 +160,7 @@ class DDQNCS():
         self.agent = DDQN(self.s_dim, self.a_dim)   #DDQN network
         self.last_state = np.zeros(self.s_dim, dtype = np.float)  #the state of last train
         self.last_action = 0        #the action of last train
+        self.last_reward = 0        #the reward of last train
         self.scheduler_list = []    #the list of coflows' index wating for scheduling of this train
         self.cycles = 0             #Episode continuous cycles
         self.counter = 0            #Episode counter
@@ -181,12 +182,13 @@ class DDQNCS():
         reward = 0 - len(self.scheduler_list)
 
         #train model
-        self.agent.remember(self.last_state, self.last_action, state, reward)
+        self.agent.remember(self.last_state, self.last_action, state, self.last_reward)
         self.agent.train()
 
         #update saved parmeter
         self.last_state = state
         self.last_action = action
+        self.last_reward = reward
         self.cycles += 1
 
         info = ''

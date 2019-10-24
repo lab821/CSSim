@@ -27,9 +27,9 @@ class Squeue(object):
         self.priority = 1           #the sending priority
         self.status = 0             #sending status, 0 for uncompleted and 1 for completed
         self.starttime = starttime  #the start time 
-        self.duration = -1          #the duration of transmission
+        self.duration = 0          #the duration of transmission
         self.bw = 0                 #the current bandwidth
-        self.index = index          #queue index
+        self.index = index          #flow index
 
 
     def update(self, bandwidth, interval, temp):
