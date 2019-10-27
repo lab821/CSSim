@@ -367,7 +367,10 @@ class simulator(object):
                         res, info = self.scheduler.train(actq, cptq, done)  
                     self.control(res)
                 #print loginfo in this cycle
-                self.Loginfo(temp,info)
+                if self.log_level > 1:
+                    self.Loginfo(temp,info)
+                else:
+                    self.Logprinter(info)
                 #reset completed flow_list
                 self.completedqueues = []
                 t_last = temp
@@ -385,7 +388,7 @@ if __name__ == "__main__":
     logpath = 'log/log'
     if os.path.exists(logpath):
         os.remove(logpath)
-    sim = simulator(trace, 1, 'coflow', 2, 'DDQNCS')
+    sim = simulator(trace, 1, 'coflow', 1, 'DDQNCS')
     #sim = simulator(trace, 0, 'coflow', 3)
     sim.run(timer = False)
 

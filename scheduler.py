@@ -163,7 +163,7 @@ class DDQNCS():
         self.last_action = 0        #the action of last train
         self.last_reward = 0        #the reward of last train
         self.scheduler_list = []    #the list of coflows' index wating for scheduling of this train
-        self.cycles = 0             #Episode continuous cycles
+        self.cycle_count = 0             #Episode continuous cycles
         self.counter = 0            #Episode counter
 
         ##additional arguments for reward
@@ -207,19 +207,21 @@ class DDQNCS():
         self.last_state = state
         self.last_action = action
         self.last_reward = reward
-        self.cycles += 1
+        self.cycle_count += 1
         #self.last_avg_duration = avg_duration
 
-        info = ''
-        if done:
-            
-            info += 'Episode %d completed: total cycles : %d\n'%(self.counter, self.cycles)
-            self.counter += 1
-            self.cycles = 0
+        #info = ''
         #make return parmeter
         ret = self.get_action(coflow_list, choice_index)
-        infostr = self.get_info(state, choice_index, reward, info)
-        return ret, infostr
+        info = 'Cycle: %d , reward: %.2f , choice_index : %d\n'%(self.cycle_count, reward, choice_index)
+        
+        if done:
+            info += 'Episode %d completed: total cycles : %d\n'%(self.counter, self.cycle_count)
+            self.counter += 1
+            self.cycle_count = 0
+
+        #infostr = self.get_info(state, choice_index, reward, info)
+        return ret, info
 
 
     def get_state(self, coflowinfo):
