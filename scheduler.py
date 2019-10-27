@@ -165,6 +165,7 @@ class DDQNCS():
         self.scheduler_list = []    #the list of coflows' index wating for scheduling of this train
         self.cycle_count = 0             #Episode continuous cycles
         self.counter = 0            #Episode counter
+        self.corrector_count = 0    #count the wrong action for correcting
 
         ##additional arguments for reward
         self.last_avg_duration = 1  #the average coflow duration in last cycle
@@ -185,30 +186,38 @@ class DDQNCS():
             choice_index = self.scheduler_list[action]
 
         # #reward according to scheduler list length
-        reward = 0 - len(self.scheduler_list)
+        # reward = 0 - len(self.scheduler_list)
 
-        # #according to duration
-        # avg_duration = self.get_avg_duration(state)
-        # if avg_duration == 0:
-        #     reward = 1
-        # else:
-        #     reward = self.last_avg_duration / avg_duration
+        #according to duration
+        avg_duration = self.get_avg_duration(state)
+        if avg_duration == 0:
+            reward = 1 + self.last_reward
+        else:
+            reward = self.last_avg_duration / avg_duration + self.last_reward
 
         #fix reward 
         #punishment
-        # if choice_index == -1:
-        #     reward -= 10
+        if choice_index == -1:
+            self.last_reward = -10
+            self.corrector_count += 1
+            #correct the action if it is always wrong for ten times
+            if self.corrector_count > 10:
+                action = np.random.choice(len(self.scheduler_list))
+                choice_index = self.scheduler_list[action]
+                self.corrector_count = 0
+        else:
+            self.last_reward = 0
+            self.corrector_count = 0
 
         #train model
-        self.agent.remember(self.last_state, self.last_action, state, self.last_reward)
+        self.agent.remember(self.last_state, self.last_action, state, reward)
         self.agent.train()
 
         #update saved parmeter
         self.last_state = state
         self.last_action = action
-        self.last_reward = reward
         self.cycle_count += 1
-        #self.last_avg_duration = avg_duration
+        self.last_avg_duration = avg_duration
 
         #info = ''
         #make return parmeter
@@ -273,6 +282,10 @@ class DDQNCS():
         -----------------
             state : array
                 the state of this cycle
+        return :
+        -----------------
+            ret : float
+
         """
         total_duration = 0
         for i in range(len(self.scheduler_list)):
