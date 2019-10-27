@@ -78,6 +78,7 @@ class DQNscheduler():
             res += row['size'] / row['duration']
         return res
 
+    #this has been changed need to update
     def get_state(self, actq, cptq):
         '''
         Converting the active and completed flows information to a 1*136 state space
@@ -153,7 +154,7 @@ class DQNscheduler():
 
 class DDQNCS():
     M = 5       #max coflow number to scheduler
-    size_per_line = 3   #the size of each state line
+    size_per_line = 4   #the size of each state line
     s_dim = size_per_line*M #size of state space  
     a_dim = M   #size of action space
     def __init__(self):
@@ -164,12 +165,17 @@ class DDQNCS():
         self.scheduler_list = []    #the list of coflows' index wating for scheduling of this train
         self.cycles = 0             #Episode continuous cycles
         self.counter = 0            #Episode counter
+
+        ##additional arguments for reward
+        self.last_avg_duration = 1  #the average coflow duration in last cycle
     
     def train(self, actq, cptq, coflowinfo, done):
-        coflow_list = coflowinfo['index'].tolist()
-        
         #get state
-        state = self.get_state(coflowinfo)
+        state, coflow_list = self.get_state(coflowinfo)
+
+        #if there are no coflows in this cycle, return
+        if len(self.scheduler_list) == 0 :
+            return {},''
 
         #generate action
         action = self.agent.act(state)
@@ -178,8 +184,20 @@ class DDQNCS():
         else:
             choice_index = self.scheduler_list[action]
 
-        #reward
+        # #reward according to scheduler list length
         reward = 0 - len(self.scheduler_list)
+
+        # #according to duration
+        # avg_duration = self.get_avg_duration(state)
+        # if avg_duration == 0:
+        #     reward = 1
+        # else:
+        #     reward = self.last_avg_duration / avg_duration
+
+        #fix reward 
+        #punishment
+        # if choice_index == -1:
+        #     reward -= 10
 
         #train model
         self.agent.remember(self.last_state, self.last_action, state, self.last_reward)
@@ -190,6 +208,7 @@ class DDQNCS():
         self.last_action = action
         self.last_reward = reward
         self.cycles += 1
+        #self.last_avg_duration = avg_duration
 
         info = ''
         if done:
@@ -205,20 +224,18 @@ class DDQNCS():
 
     def get_state(self, coflowinfo):
         self.scheduler_list = []
-        temp = coflowinfo.sort_values(by='sentsize')
+        coflow_list = []
         state = np.zeros(self.s_dim, dtype = np.float)
-
-        i = 0
-        for index, row in temp.iterrows():
-            if i > self.M-1:
-                break
-            else:
+        for i in range(len(coflowinfo)):
+            row = coflowinfo[i]
+            if i < self.M:
                 state[self.size_per_line*i] = row['duration']
                 state[self.size_per_line*i + 1] = row['sentsize']/1000000
                 state[self.size_per_line*i + 2] = row['count']
+                state[self.size_per_line*i + 3] = row['total_count']
                 self.scheduler_list.append(row['index'])
-            i += 1
-        return state
+            coflow_list.append(row['index'])
+        return state, coflow_list
 
     def get_action(self, coflow_list, choice_index):
         value = [0]*len(coflow_list)
@@ -241,8 +258,24 @@ class DDQNCS():
         rewardstr = 'Evaluation Reward: %f\n'%reward
         policy = 'State:\n'
         for i in range(len(self.scheduler_list)):
-            policy += 'Coflow_index:%d, coflow_duration: %.0f ms, sent_size: %.2f Mb, flow_count: %.0f\n'%                  (self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1],                   state[self.size_per_line*i+2])
+            policy += 'Coflow_index:%d, coflow_duration: %.0f ms, sent_size: %.2f Mb, active_flow_count: %.0f , total_flow_count: %d\n'%(self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1], state[self.size_per_line*i+2], state[self.size_per_line*i+3])
         policy += 'Action:\nChoice coflow index: %d\n'%choice_index
             
         infostr = line + rewardstr + policy + info + line
         return infostr 
+    
+    def get_avg_duration(self,state):
+        """
+        A way to calculate the average duration of coflows in scheduler list
+        Parameters:
+        -----------------
+            state : array
+                the state of this cycle
+        """
+        total_duration = 0
+        for i in range(len(self.scheduler_list)):
+            duration = state[self.size_per_line*i]
+            total_duration += duration
+        ret = total_duration / len(self.scheduler_list)
+        return ret
+

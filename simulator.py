@@ -7,12 +7,12 @@ import os
 from squeue import Flow, Squeue, Coflow
 from scheduler import DQNscheduler, DDQNCS
 import interface
+import sys
 
 class simulator(object):
     def __init__(self, trace, mode, granularity, log_level = 5, algorithm = None, compensation = None):
         """
         init the simulator
-        Input parameters:
         Parameters:
         -----------------
             trace : str
@@ -30,7 +30,7 @@ class simulator(object):
         """
         self.data = pd.read_csv(trace)  #Flow trace 
         self.data_backup = self.data    #Flow trace backup for cyclic mode
-        self.p_interval = 10000       #process interval
+        self.p_interval = 1000000       #process interval
         self.t_interval = 1000      #training interval 
         self.sendingqueues = []     #store the uncompleted flows
         self.completedqueues = []   #store the completed flows
@@ -102,7 +102,7 @@ class simulator(object):
                     cycle_cct = coflow_duration//(1000*len(self.coflow_list))
                     info += 'CCT in last cycle is : %d s\n'%cycle_cct + line
                     #reset coflow_list
-                    self.coflow_list = []
+                    self.coflow_list = {}
                 self.Logprinter(info)
             #Once mode
             else:
@@ -211,34 +211,25 @@ class simulator(object):
         '''
         Get the current active queues and completion queues information
         Two tables are returned, representing the active queues and the completed queues, respectively
-        ret unit : dataframe  
+        ret unit : list
         '''
-        actq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'priority', 'sentsize', 'qindex'])
-        cptq = pd.DataFrame(columns=['src', 'dst','protocol', 'sp', 'dp', 'duration', 'size'])
-        coflowinfo = pd.DataFrame(columns=['index', 'starttime', 'duration', 'count', 'sentsize'])
+        actq = []
+        cptq = []
+        coflowinfo = []
         for queue in self.sendingqueues:
             row = queue.getinfo()
-            actq = actq.append(row, ignore_index=True)
-        ##NOTE:This change is followed by the change of removal of printed queues
-        # for i in range(len(self.completedqueues)-1, -1, -1):
-        #     queue = self.completedqueues[i]
-        #     if queue.index == self.latestcpti:
-        #         break
-        #     row = queue.getinfo()
-        #     cptq = cptq.append(row, ignore_index=True)
-        # if len(self.completedqueues) > 0:
-        #     self.latestcpti = self.completedqueues[-1].index
-        ##NOTE:Ibid
+            actq.append(row)
         for queue in self.completedqueues:
             row = queue.getinfo()
-            cptq = cptq.append(row, ignore_index=True)
+            cptq.append(row)
         if self.granularity == 'coflow':
             
             for coflow in self.coflow_list.values():
                 if coflow.active:
+                    #this need to be improve, HC
                     coflow.duration = temp - coflow.starttime
                     row = coflow.getinfo()         
-                    coflowinfo = coflowinfo.append(row, ignore_index=True)
+                    coflowinfo.append(row)
         return actq, cptq, coflowinfo
     
 
@@ -335,7 +326,6 @@ class simulator(object):
         with open(log_path,'a') as f:
             f.write(info)   
     
-    ###############TODO: make the control into non-blocking control#########################
     def run(self, timer = True, timer_upper_limit = None):
         '''
         The simulation main function
@@ -374,21 +364,29 @@ class simulator(object):
                     if self.granularity == 'coflow':
                         res, info = self.scheduler.train(actq, cptq, coflowinfo, done)
                     else:
-                        res, info = self.scheduler.train(actq, cptq, done)     
+                        res, info = self.scheduler.train(actq, cptq, done)  
                     self.control(res)
+                #print loginfo in this cycle
                 self.Loginfo(temp,info)
+                #reset completed flow_list
+                self.completedqueues = []
                 t_last = temp
             else:
                 pass
             if timer:
                 time.sleep(self.p_interval/1000)
-            if timer_upper_limit and timer > timer_upper_limit:
-                return
+            if timer_upper_limit and temp > timer_upper_limit:
+                break
+
 
 if __name__ == "__main__":
-    trace = 'data/data-test.csv'
+
+    trace = 'data/data-example.csv'
     logpath = 'log/log'
     if os.path.exists(logpath):
         os.remove(logpath)
-    sim = simulator(trace, 0, 'coflow', 3, 'DDQNCS')
+    sim = simulator(trace, 1, 'coflow', 2, 'DDQNCS')
+    #sim = simulator(trace, 0, 'coflow', 3)
     sim.run(timer = False)
+
+        

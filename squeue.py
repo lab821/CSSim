@@ -23,12 +23,12 @@ class Flow(object):
 class Squeue(object):
     def __init__(self, flow, starttime, index):
         self.flow = flow            #infomation of this flow
-        self.residualsize = flow.size    #residual size of this flow
+        self.residualsize = flow.size    #residual size of this flow, unit : b
         self.priority = 1           #the sending priority
         self.status = 0             #sending status, 0 for uncompleted and 1 for completed
         self.starttime = starttime  #the start time 
         self.duration = 0          #the duration of transmission
-        self.bw = 0                 #the current bandwidth
+        self.bw = 0                 #the current bandwidth, unit : b/s
         self.index = index          #flow index
 
 
@@ -38,15 +38,19 @@ class Squeue(object):
         if the residual size < 0 then this flow is completed and return True
         else return False, the sentsize in this interval is also returned as sentsize 
         '''
-        sentsize = bandwidth * (interval / 1000)
-        self.residualsize = self.residualsize - sentsize
         self.bw = bandwidth
-        if self.residualsize <= 0:
+        sentsize = self.bw * (interval / 1000)
+        if sentsize > self.residualsize:
+            self.duration = self.duration + self.residualsize /(self.bw/1000)
+            ret = self.residualsize
+            self.residualsize = 0
             self.status = 1
-            self.duration = temp - self.starttime
-            return sentsize, True
+            return ret, True
         else:
-            return sentsize, False
+            self.residualsize = self.residualsize - sentsize
+            ret = sentsize
+            self.duration = temp - self.starttime
+            return ret, False
 
     ###############debug#########################
     def getinfo(self):
@@ -121,4 +125,5 @@ class Coflow(object):
         res['duration'] = self.duration
         res['count'] = self.length()
         res['sentsize'] = self.size
+        res['total_count'] = self.flow_count
         return res
