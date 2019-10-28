@@ -63,12 +63,39 @@ def fct_plot(logpath):
             line = f.readline()
     
     print(duration_list)
+
+def new_log_analysis(logpath):
+    reward_list = []
+    CCT_list = []
+    with open(logpath,'r') as f :
+        line = f.readline()
+        while(line):
+            if 'CCT' in line:
+                cct = int(line.split(' ')[-2])
+                CCT_list.append(cct)
+            elif 'reward' in line:
+                reward = line.split(' ')[4]
+                reward_list.append(reward)
+            line = f.readline()
+    fig = plt.figure(figsize=(12,6))
+    fig.add_subplot(1,2,1)
+    plt.xlabel('训练次数',font_lable_c)
+    plt.ylabel('奖励值',font_lable_c)
+    plt.plot(reward_list)
     
+    fig.add_subplot(1,2,2)
+    plt.xlabel('幕数',font_lable_c)
+    plt.ylabel('流组平均完成时间',font_lable_c)
+    plt.plot(CCT_list)
+    #print(CCT_list)
+    plt.show()
+    plt.savefig('reward_plot.png')
+
 if __name__ == "__main__":
 
-    logpath = 'log/log'
+    logpath = 'log/有惩罚的等待时间比'
 
     # cycle_duration, rewards_list = log_analysis(logpath)   
     # cycle_plot(cycle_duration)
     # reward_plot(rewards_list) 
-    fct_plot(logpath)
+    new_log_analysis(logpath)
