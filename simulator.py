@@ -89,7 +89,7 @@ class simulator(object):
                 data.loc[:,'rtime'] += total_interval
                 self.data = data
                 if self.cstime == 0:
-                    duration = temp -self.starttime
+                    duration = temp - self.starttime
                 else:
                     duration = temp - self.cstime 
                 self.cstime = temp
@@ -176,6 +176,8 @@ class simulator(object):
         share_count = self.hpc
         for i in range(len(self.sendingqueues)-1, -1, -1):
             flow = self.sendingqueues[i]
+            sentsize = 0
+            ret = 0
             #process high priority flow
             if flow.priority:
                 bw = int(self.bandwidth / share_count)
@@ -184,15 +186,22 @@ class simulator(object):
                     self.completedqueues.append(flow)
                     self.sendingqueues.pop(i)
                     self.hpc -= 1
-                #update coflow info
-                if self.granularity == 'coflow':
-                    coflow_index = flow.flow.tag
-                    self.coflow_list[coflow_index].update(sentsize, temp)
-                    if ret:
-                        #if this flow is finished, pop it from the coflow's flow_list
-                        self.coflow_list[coflow_index].remove(flow)
+                # #update coflow info
+                # if self.granularity == 'coflow':
+                #     coflow_index = flow.flow.tag
+                #     self.coflow_list[coflow_index].update(sentsize, temp)
+                #     if ret:
+                #         #if this flow is finished, pop it from the coflow's flow_list
+                #         self.coflow_list[coflow_index].remove(flow)
             else:
                 flow.bw = 0
+            #update coflow info
+            if self.granularity == 'coflow':
+                coflow_index = flow.flow.tag
+                self.coflow_list[coflow_index].update(sentsize, temp)
+                if ret:
+                    #if this flow is finished, pop it from the coflow's flow_list
+                    self.coflow_list[coflow_index].remove(flow)
             ##TESTING: CLOSE WEBUI
             # row = {}
             # row['queue_index'] = queue.index

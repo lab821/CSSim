@@ -171,9 +171,15 @@ class DDQNCS():
         self.last_avg_duration = 1  #the average coflow duration in last cycle
     
     def train(self, actq, cptq, coflowinfo, done):
+        #if one episode completed
+        if done:
+            info = 'Episode %d completed: total cycles : %d\n'%(self.counter, self.cycle_count)
+            self.counter += 1
+            self.cycle_count = 0
+            return {}, info
+
         #get state
         state, coflow_list = self.get_state(coflowinfo)
-
         #if there are no coflows in this cycle, return
         if len(self.scheduler_list) == 0 :
             return {},''
@@ -193,7 +199,7 @@ class DDQNCS():
         if avg_duration == 0:
             reward = 1 + self.last_reward
         else:
-            reward = self.last_avg_duration / avg_duration + self.last_reward
+            reward = self.get_reward(avg_duration) + self.last_reward
 
         #fix reward 
         #punishment
@@ -219,17 +225,12 @@ class DDQNCS():
         self.cycle_count += 1
         self.last_avg_duration = avg_duration
 
-        #info = ''
+        
         #make return parmeter
         ret = self.get_action(coflow_list, choice_index)
         info = 'Cycle: %d , reward: %.2f , choice_index : %d\n'%(self.cycle_count, reward, choice_index)
-        
-        if done:
-            info += 'Episode %d completed: total cycles : %d\n'%(self.counter, self.cycle_count)
-            self.counter += 1
-            self.cycle_count = 0
-
-        #infostr = self.get_info(state, choice_index, reward, info)
+        #info = ''
+        #info = self.get_info(state, choice_index, reward, info)
         return ret, info
 
 
@@ -240,13 +241,22 @@ class DDQNCS():
         for i in range(len(coflowinfo)):
             row = coflowinfo[i]
             if i < self.M:
-                state[self.size_per_line*i] = row['duration']
-                state[self.size_per_line*i + 1] = row['sentsize']/1000000
+                state[self.size_per_line*i] = row['duration']/1000          #unit: s
+                state[self.size_per_line*i + 1] = row['sentsize']/1000000   #unit: Mb
                 state[self.size_per_line*i + 2] = row['count']
                 state[self.size_per_line*i + 3] = row['total_count']
                 self.scheduler_list.append(row['index'])
             coflow_list.append(row['index'])
         return state, coflow_list
+
+    def get_reward(self, avg_duration):
+        difference = self.last_avg_duration - avg_duration + 1.1
+        if difference <= 0:
+            print(difference)
+            reward = -1
+        else:
+            reward = np.log10(difference)
+        return reward
 
     def get_action(self, coflow_list, choice_index):
         value = [0]*len(coflow_list)
@@ -269,7 +279,7 @@ class DDQNCS():
         rewardstr = 'Evaluation Reward: %f\n'%reward
         policy = 'State:\n'
         for i in range(len(self.scheduler_list)):
-            policy += 'Coflow_index:%d, coflow_duration: %.0f ms, sent_size: %.2f Mb, active_flow_count: %.0f , total_flow_count: %d\n'%(self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1], state[self.size_per_line*i+2], state[self.size_per_line*i+3])
+            policy += 'Coflow_index:%d, coflow_duration: %.0f s, sent_size: %.2f Mb, active_flow_count: %.0f , total_flow_count: %d\n'%(self.scheduler_list[i], state[self.size_per_line*i], state[self.size_per_line*i+1], state[self.size_per_line*i+2], state[self.size_per_line*i+3])
         policy += 'Action:\nChoice coflow index: %d\n'%choice_index
             
         infostr = line + rewardstr + policy + info + line
@@ -278,11 +288,11 @@ class DDQNCS():
     def get_avg_duration(self,state):
         """
         A way to calculate the average duration of coflows in scheduler list
-        Parameters:
+        Parameters
         -----------------
             state : array
                 the state of this cycle
-        return :
+        Returns
         -----------------
             ret : float
 
@@ -291,6 +301,6 @@ class DDQNCS():
         for i in range(len(self.scheduler_list)):
             duration = state[self.size_per_line*i]
             total_duration += duration
-        ret = total_duration / len(self.scheduler_list)
+        ret = total_duration / self.M
         return ret
 
